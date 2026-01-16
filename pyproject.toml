@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "meowtv"
-version = "1.0.5"
+version = "1.0.6"
 description = "CLI for streaming content from MeowTV providers"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -30,7 +30,7 @@ dependencies = [
     "click>=8.1.0",
     "yt-dlp>=2024.1.0",
     "questionary>=2.0.0",
-    "python-mpv>=1.0.0",
+    "mpv>=1.0.8",
 ]
 
 [project.optional-dependencies]
