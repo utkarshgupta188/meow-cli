@@ -1,86 +1,108 @@
-# MeowTV CLI 🐱📺
+# 🐱 MeowTV CLI - The Purr-fect Streamer
+
+<p align="center">
+  <img src="https://img.icons8.com/isometric/512/flat-tv.png" width="128" />
+  <br />
+  <b>Stream movies, TV shows, and cartoons directly from your terminal.</b>
+  <br />
+  <i>Fast, lightweight, and absolutely paw-some.</i>
+</p>
+
+---
 
 [![PyPI version](https://badge.fury.io/py/meowtv.svg)](https://badge.fury.io/py/meowtv)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![Python: 3.8+](https://img.shields.io/badge/Python-3.8+-green.svg)](https://www.python.org/)
 
-**MeowTV CLI** is a feature-rich terminal application for streaming movies, TV shows, and cartoons directly from the command line. It supports multiple providers, local favorites, downloads, and integration with high-quality media players like mpv and VLC.
+**MeowTV CLI** is a feature-rich terminal application for streaming content. Built with speed in mind, it leverages parallel fetching, HLS proxying, and intelligent variant filtering to give you a buffer-free experience.
 
-## ✨ Features
+---
 
-- **Multi-Provider Support**:
-  - 🌌 **MeowVerse**: Huge library of Movies & TV Shows.
-  - 🏰 **MeowTV**: High-quality streams from Castle API.
-  - 🦁 **MeowToon**: Cartoons and Anime content.
-- **Interactive TUI**: Beautiful, easy-to-use terminal interface powered by `rich`.
-- **Powerful Playback**: Streaming support via **mpv** (recommended) or **VLC**.
-- **Downloads**: Download content for offline viewing (HLS/m3u8 support).
-- **Favorites**: Manage your watchlist locally.
-- **Smart Search**: Unified search across providers.
+## 🔥 Key Features
+
+*   🌍 **Universal Search**: Search across multiple high-quality providers simultaneously.
+*   🚀 **Turbo Startup**: Parallelized metadata fetching and subtitle downloads for instant launch.
+*   🎬 **High Quality**: Support for 1080p+, Multi-audio, and Dual-audio streams.
+*   🛡️ **Smart Proxy**: Built-in Flask HLS proxy with **Variant Filtering** to prevent connection starvation.
+*   💬 **Subtitles Support**: Multi-language support with automatic local downloading for player compatibility.
+*   📥 **Integrated Downloads**: Save your favorite content for offline viewing.
+*   ⭐ **Watchlist**: Manage your personal library with local favorites.
+
+---
+
+## 🌌 Providers
+
+| Provider | Content Type | Speciality |
+| :--- | :--- | :--- |
+| **MeowVerse** | Movies & TV | Global content, multi-audio, high speed |
+| **MeowTV** | Movies & TV | Premium Asian & Global library |
+| **MeowToon** | Anime & Kids | Extensive cartoon & anime collection |
+
+---
 
 ## 📦 Installation
 
-Install directly from PyPI:
-
 ```bash
-pip install meowtv
+pip install -U meowtv
 ```
 
-### System Requirements
-External players are required for playback:
-- **[mpv](https://mpv.io/)** (Recommended) or **VLC**
-- **[FFmpeg](https://ffmpeg.org/)** (Required for downloads)
+### 🛠️ Dependencies
+- **[mpv](https://mpv.io/)** (Highly recommended) or **VLC**.
+- **[FFmpeg](https://ffmpeg.org/)** (Required for HLS downloads).
 
-Ensure these are installed and available in your system PATH.
+---
 
-## 🚀 Usage
+## 🚀 Quick Start
 
-Start the interactive mode:
+Start the interactive terminal UI:
 ```bash
 meowtv
 ```
 
-### Quick Commands
+### ⌨️ CLI Commands
 
-**Search:**
+**Search & Play:**
 ```bash
-meowtv search "breaking bad"
-meowtv search "naruto" -p meowtoon
+meowtv search "interstellar"
+meowtv search "one piece" -p meowtoon
 ```
 
-**Play:**
+**Direct Play:**
 ```bash
-meowtv play <content_id>
 meowtv play <content_id> --player vlc
 ```
 
-**Download:**
+**Downloads:**
 ```bash
-meowtv download <content_id> -o ~/Downloads
+meowtv download <content_id> -o ~/Videos
 ```
 
-**Favorites:**
-```bash
-meowtv favorites list
-meowtv favorites add <content_id>
-```
+---
 
-**Configuration:**
-```bash
-meowtv config --player mpv
-meowtv config --proxy <url>
-```
+## 🏎️ Performance Optimizations (v1.0.8+)
+
+We've recently overhauled the engine for maximum speed:
+- **Parallel Fetching**: Fetches all seasons/episodes simultaneously using `asyncio.gather`.
+- **HLS Variant Filtering**: Limits stream probing to the top 3 qualities to prevent "14-minute" initial lags.
+- **Aggressive Buffering**: Optimized MPV arguments (`--cache-secs=2`) for near-instant playback.
+
+---
 
 ## ⚙️ Configuration
 
-Configuration is stored in `~/.config/meowtv/config.json`. You can edit it manually or via the CLI:
+Configuration is stored in `~/.config/meowtv/config.json`.
 ```bash
 meowtv config --show
+meowtv config --player mpv
 ```
 
-## 📝 License
+---
 
-This project is licensed under the MIT License.
+## ⚖️ Disclaimer & License
 
-## ⚠️ Disclaimer
+**Disclaimer**: This tool is for educational purposes only. The developers do not host any content. All content is scraped from third-party publicly available sources.
 
-This tool is for educational purposes only. The developers do not host any content. content is scraped from third-party providers.
+Licensed under the **MIT License**.
+
+---
+<p align="center">Made with ❤️ by the MeowTV Community</p>
