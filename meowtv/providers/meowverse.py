@@ -13,10 +13,6 @@ from meowtv.models import (
 )
 from meowtv.providers.base import Provider
 
-# Cinemeta APIs
-CINEMETA_URL = "https://v3-cinemeta.strem.io"
-KITSU_URL = "https://anime-kitsu.strem.fun"
-
 # NetMirror (Netflix Mirror) APIs
 NETMIRROR_MAIN_URL = "https://net20.cc"
 NETMIRROR_NEW_URL = "https://net51.cc"
@@ -71,11 +67,11 @@ class MeowVerseProvider(Provider):
                         if contents:
                             rows.append(HomeRow(name=name, contents=contents))
                     except Exception as cat_e:
-                        print(f"[CineStream] Catalog error {name}: {cat_e}")
+                        pass # print(f"[CineStream] Catalog error {name}: {cat_e}")
 
                 return rows
             except Exception as e:
-                print(f"[CineStream] Home error: {e}")
+                # print(f"[CineStream] Home error: {e}")
                 return []
 
     async def search(self, query: str) -> list[ContentItem]:
@@ -115,7 +111,7 @@ class MeowVerseProvider(Provider):
                 return contents
                 
             except Exception as e:
-                print(f"[MeowVerse] Search error: {e}")
+                # print(f"[MeowVerse] Search error: {e}")
                 return []
 
     async def fetch_details(self, content_id: str, include_episodes: bool = True) -> MovieDetails | None:
@@ -270,7 +266,7 @@ class MeowVerseProvider(Provider):
                 )
              
             except Exception as e:
-                print(f"[MeowVerse] Details error: {e}")
+                # print(f"[MeowVerse] Details error: {e}")
                 return None
         
 
@@ -297,10 +293,10 @@ class MeowVerseProvider(Provider):
         language_id: str | int | None = None
     ) -> VideoResponse | None:
         """Resolve stream using multiple extractors (VidLink prioritized)."""
-        print(f"[CineStream] Resolving stream for ID: {episode_id}")
+        # print(f"[CineStream] Resolving stream for ID: {episode_id}")
         
         # 1. Try NetMirror first (Very fast, doesn't need TMDB ID)
-        print(f"[CineStream] Trying NetMirror for content ID: {movie_id}")
+        # print(f"[CineStream] Trying NetMirror for content ID: {movie_id}")
         netmirror_stream = await self._extract_netmirror(movie_id, episode_id)
         if netmirror_stream:
             return netmirror_stream
@@ -330,9 +326,9 @@ class MeowVerseProvider(Provider):
                                     meta_type = t
                                     break
                     
-                    print(f"[CineStream] Resolved TMDB ID: {tmdb_id}")
+                    # print(f"[CineStream] Resolved TMDB ID: {tmdb_id}")
                 except Exception as e:
-                    print(f"[CineStream] Cinemeta error: {e}")
+                    pass # print(f"[CineStream] Cinemeta error: {e}")
 
                 # Determine Season/Episode
                 season = 1
@@ -347,7 +343,7 @@ class MeowVerseProvider(Provider):
                             except: pass
 
                 # --- 2. VegaMovies (Secondary - Dual Audio) ---
-                print(f"[CineStream] Trying VegaMovies for: {title}")
+                # print(f"[CineStream] Trying VegaMovies for: {title}")
                 vega_stream = await self._extract_vegamovies(title, season if meta_type == "series" else None, episode if meta_type == "series" else None)
                 if vega_stream:
                     return vega_stream
@@ -373,7 +369,7 @@ class MeowVerseProvider(Provider):
             retries = 0
             max_retries = 10
             
-            print("[NetMirror] Starting bypass...")
+            # print("[NetMirror] Starting bypass...")
             
             while retries < max_retries:
                 try:
@@ -386,10 +382,10 @@ class MeowVerseProvider(Provider):
                         if "t_hash_t" in cookies:
                             _netmirror_cookie = cookies["t_hash_t"]
                             _netmirror_cache_time = current_time
-                            print("[NetMirror] Bypass successful!")
+                            # print("[NetMirror] Bypass successful!")
                             return _netmirror_cookie
                 except Exception as e:
-                    print(f"[NetMirror] Bypass attempt error: {e}")
+                    pass # print(f"[NetMirror] Bypass attempt error: {e}")
                 
                 retries += 1
                 await asyncio.sleep(0.5)
@@ -426,7 +422,7 @@ class MeowVerseProvider(Provider):
                 
                 # Try net51.cc first
                 playlist_url = f"{NETMIRROR_NEW_URL}/tv/playlist.php?id={episode_id}&t={audio_lang or ''}&tm={tm}"
-                print(f"[NetMirror] Fetching playlist: {playlist_url}")
+                # print(f"[NetMirror] Fetching playlist: {playlist_url}")
                 
                 res_text = ""
                 playlist_base_url = NETMIRROR_NEW_URL
@@ -435,11 +431,11 @@ class MeowVerseProvider(Provider):
                     res = await client.get(playlist_url, headers=headers, cookies=cookies)
                     res_text = res.text
                 except Exception as e:
-                    print(f"[NetMirror] Playlist fetch error: {e}")
+                    pass # print(f"[NetMirror] Playlist fetch error: {e}")
                 
                 # Fallback to net20.cc if needed
                 if not res_text or "Video ID not found" in res_text:
-                    print("[NetMirror] Trying fallback to net20.cc...")
+                    # print("[NetMirror] Trying fallback to net20.cc...")
                     fallback_url = f"{NETMIRROR_MAIN_URL}/tv/playlist.php?id={episode_id}&t={audio_lang or ''}&tm={tm}"
                     headers["Referer"] = f"{NETMIRROR_MAIN_URL}/home"
                     
@@ -448,13 +444,13 @@ class MeowVerseProvider(Provider):
                         res_text = res.text
                         playlist_base_url = NETMIRROR_MAIN_URL
                     except Exception as e:
-                        print(f"[NetMirror] Fallback fetch error: {e}")
+                        # print(f"[NetMirror] Fallback fetch error: {e}")
                         return None
                 
                 try:
                     playlist = res.json()
                 except:
-                    print(f"[NetMirror] Failed to parse playlist JSON: {res_text[:200]}")
+                    # print(f"[NetMirror] Failed to parse playlist JSON: {res_text[:200]}")
                     return None
                 
                 if playlist and len(playlist) > 0:
@@ -471,7 +467,7 @@ class MeowVerseProvider(Provider):
                         else:
                             m3u8_url = f"{playlist_base_url}{source_file.replace('/tv/', '/')}"
                         
-                        print(f"[NetMirror] Found stream: {m3u8_url}")
+                        # print(f"[NetMirror] Found stream: {m3u8_url}")
                         
                         # Process subtitles
                         subtitles = []
@@ -527,9 +523,7 @@ class MeowVerseProvider(Provider):
                 return None
                 
             except Exception as e:
-                print(f"[NetMirror] Error: {e}")
-                import traceback
-                traceback.print_exc()
+                # print(f"[NetMirror] Error: {e}")
                 return None
 
     async def _extract_vidlink(
@@ -550,7 +544,7 @@ class MeowVerseProvider(Provider):
                 enc_res = await client.get(enc_url)
                 enc_text = enc_res.json().get("result")
                 if not enc_text:
-                    print("[VidLink] Encryption failed")
+                    # print("[VidLink] Encryption failed")
                     return None
                 
                 # 2. VidLink API keys
@@ -566,21 +560,21 @@ class MeowVerseProvider(Provider):
                 else:
                     api_url = f"{VIDLINK_API}/api/b/tv/{enc_text}/{season}/{episode}"
                 
-                print(f"[VidLink] Requesting stream from: {VIDLINK_API}")
+                # print(f"[VidLink] Requesting stream from: {VIDLINK_API}")
                 res = await client.get(api_url, headers=headers)
                 data = res.json()
                 
                 stream = data.get("stream")
                 if not stream:
-                    print("[VidLink] No stream found in response")
+                    # print("[VidLink] No stream found in response")
                     return None
                     
                 playlist_url = stream.get("playlist")
                 if not playlist_url:
-                    print("[VidLink] No playlist URL found")
+                    # print("[VidLink] No playlist URL found")
                     return None
                 
-                print(f"[VidLink] Found playlist: {playlist_url}")
+                # print(f"[VidLink] Found playlist: {playlist_url}")
                 
                 # Subtitles??
                 # VidLink doesn't return separate subtitles list easily in this endpoint usually, 
@@ -601,9 +595,7 @@ class MeowVerseProvider(Provider):
                 )
 
             except Exception as e:
-                print(f"[VidLink] Extraction error: {e}")
-                import traceback
-                traceback.print_exc()
+                # print(f"[VidLink] Extraction error: {e}")
                 return None
 
     _config_cache = {}
@@ -620,7 +612,7 @@ class MeowVerseProvider(Provider):
                  cls._config_cache = data
                  return data.get(key)
         except Exception as e:
-            print(f"[CineStream] Dynamic config fetch failed: {e}")
+            # print(f"[CineStream] Dynamic config fetch failed: {e}")
             return None
 
 
@@ -652,10 +644,10 @@ class MeowVerseProvider(Provider):
                 }
                 
                 # 3. Fetch Encrypted Data
-                print(f"[Hexa] Fetching from: {url}")
+                # print(f"[Hexa] Fetching from: {url}")
                 res = await client.get(url, headers=headers)
                 if res.status_code != 200:
-                    print(f"[Hexa] Error fetching data: {res.status_code}")
+                    # print(f"[Hexa] Error fetching data: {res.status_code}")
                     return None
                     
                 enc_data = res.text
@@ -669,7 +661,7 @@ class MeowVerseProvider(Provider):
                 
                 res = await client.post(dec_url, json=payload, headers={"Content-Type": "application/json"})
                 if res.status_code != 200:
-                    print(f"[Hexa] Decryption failed: {res.status_code}")
+                    # print(f"[Hexa] Decryption failed: {res.status_code}")
                     return None
                     
                 data = res.json()
@@ -677,14 +669,14 @@ class MeowVerseProvider(Provider):
                 sources = result.get("sources", [])
                 
                 if not sources:
-                    print("[Hexa] No sources found.")
+                    # print("[Hexa] No sources found.")
                     return None
                     
                 # Return first source (usually 'alpha' or similar)
                 first_src = sources[0]
                 stream_url = first_src.get("url")
                 server = first_src.get("server")
-                print(f"[Hexa] Found stream on server: {server}")
+                # print(f"[Hexa] Found stream on server: {server}")
                 
                 return VideoResponse(
                     video_url=stream_url,
@@ -698,7 +690,7 @@ class MeowVerseProvider(Provider):
                 )
 
             except Exception as e:
-                print(f"[Hexa] Error: {e}")
+                # print(f"[Hexa] Error: {e}")
                 return None
 
     async def _extract_hdmovie2(
@@ -709,7 +701,7 @@ class MeowVerseProvider(Provider):
         episode: int | None = None
     ) -> VideoResponse | None:
         """Internal Hdmovie2 extraction."""
-        print(f"[Hdmovie2] Searching for: {title}")
+        # print(f"[Hdmovie2] Searching for: {title}")
         base_url = await self._fetch_dynamic_url("hdmovie2") or "https://hdmovie2.kiwi"
             
         async with httpx.AsyncClient(timeout=30, follow_redirects=True) as client:
@@ -720,7 +712,7 @@ class MeowVerseProvider(Provider):
                 safe_title = re.sub(r'\s+', ' ', safe_title).strip()
                 search_query = safe_title.replace(" ", "+")
                 search_url = f"{base_url}/?s={search_query}"
-                print(f"[Hdmovie2] Search URL: {search_url}")
+                # print(f"[Hdmovie2] Search URL: {search_url}")
 
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -740,12 +732,12 @@ class MeowVerseProvider(Provider):
                         candidates.append(href)
 
                 if not candidates:
-                    print("[Hdmovie2] No search results found.")
+                    # print("[Hdmovie2] No search results found.")
                     return None
                 
                 # Naive selection: First result or try to match title/year
                 page_url = candidates[0]
-                print(f"[Hdmovie2] Selected Page: {page_url}")
+                # print(f"[Hdmovie2] Selected Page: {page_url}")
 
                 res = await client.get(page_url, headers=headers)
                 soup = BeautifulSoup(res.text, 'html.parser')
@@ -761,7 +753,7 @@ class MeowVerseProvider(Provider):
 
                 # 4. Parse Player Options (ul#playeroptionsul)
                 options = soup.select("ul#playeroptionsul li")
-                print(f"[Hdmovie2] Found {len(options)} options")
+                # print(f"[Hdmovie2] Found {len(options)} options")
                 
                 target_li = None
                 # Priority: "Ultra Stream" or "Super Player" or "Fast Player"
@@ -775,7 +767,7 @@ class MeowVerseProvider(Provider):
                     target_li = options[0]
                     
                 if not target_li:
-                    print("[Hdmovie2] No player options.")
+                    # print("[Hdmovie2] No player options.")
                     return None
 
                 post_id = target_li.get("data-post")
@@ -818,9 +810,7 @@ class MeowVerseProvider(Provider):
                 )
 
             except Exception as e:
-                print(f"[Hdmovie2] Error: {e}")
-                import traceback
-                traceback.print_exc()
+                # print(f"[Hdmovie2] Error: {e}")
                 return None
     
     async def _extract_vegamovies(
@@ -830,7 +820,7 @@ class MeowVerseProvider(Provider):
         episode: int | None = None
     ) -> VideoResponse | None:
         """Internal VegaMovies extraction."""
-        print(f"[VegaMovies] Searching for: {title}")
+        # print(f"[VegaMovies] Searching for: {title}")
         
         # Dynamic base URL
         base_url = await self._fetch_dynamic_url("vegamovies") or "https://vegamovies.gt"
@@ -847,7 +837,7 @@ class MeowVerseProvider(Provider):
                 search_query = query.replace(" ", "+")
                 
                 search_url = f"{base_url}/?s={search_query}"
-                print(f"[VegaMovies] Search URL: {search_url}")
+                # print(f"[VegaMovies] Search URL: {search_url}")
 
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -861,11 +851,11 @@ class MeowVerseProvider(Provider):
                 # Find first article entry
                 first_match = soup.select_one("article.entry > h2 > a") or soup.select_one("article.entry > a")
                 if not first_match:
-                     print("[VegaMovies] No search results found.")
+                     # print("[VegaMovies] No search results found.")
                      return None
                      
                 page_url = first_match['href']
-                print(f"[VegaMovies] Selected Page: {page_url}")
+                # print(f"[VegaMovies] Selected Page: {page_url}")
 
                 res = await client.get(page_url, headers=headers)
                 soup = BeautifulSoup(res.text, 'html.parser')
@@ -898,7 +888,7 @@ class MeowVerseProvider(Provider):
                              candidates.append((prio, text, href))
                 
                 if not candidates:
-                    print("[VegaMovies] No links found.")
+                    # print("[VegaMovies] No links found.")
                     return None
 
                 target_url = None
@@ -909,13 +899,13 @@ class MeowVerseProvider(Provider):
                     candidates.sort(key=lambda x: x[0], reverse=True)
                     target_url = candidates[0][2]
                 
-                print(f"[VegaMovies] Processing: {target_url}")
+                # print(f"[VegaMovies] Processing: {target_url}")
 
                 # 4. Resolve NexDrive / Check Direct
                 final_url = None
                 
                 if "nexdrive" in target_url:
-                     print("[VegaMovies] Following NexDrive...")
+                     # print("[VegaMovies] Following NexDrive...")
                      res2 = await client.get(target_url, headers=headers)
                      soup2 = BeautifulSoup(res2.text, 'html.parser')
                      
@@ -929,7 +919,7 @@ class MeowVerseProvider(Provider):
                          
                          # Resolve FastDL if selected (it often redirects to dl.php?link=...)
                          if "fastdl" in final_url or "filebee" in final_url:
-                             print(f"[VegaMovies] Resolving FastDL: {final_url}")
+                             # print(f"[VegaMovies] Resolving FastDL: {final_url}")
                              try:
                                  res_dl = await client.get(final_url, follow_redirects=True)
                                  # Check URL for dl.php?link=...
@@ -939,15 +929,15 @@ class MeowVerseProvider(Provider):
                                      real_link = urllib.parse.parse_qs(parsed.query).get('link', [None])[0]
                                      if real_link:
                                          final_url = real_link
-                                         print(f"[VegaMovies] Resolved to Direct Link: {final_url}")
+                                         # print(f"[VegaMovies] Resolved to Direct Link: {final_url}")
                              except Exception as dl_e:
-                                 print(f"[VegaMovies] FastDL resolution error: {dl_e}")
+                                 pass # print(f"[VegaMovies] FastDL resolution error: {dl_e}")
                 else:
                     final_url = target_url
                 
                 if not final_url: return None
                 
-                print(f"[VegaMovies] Final URL: {final_url}")
+                # print(f"[VegaMovies] Final URL: {final_url}")
                 
                 return VideoResponse(
                     video_url=final_url,
@@ -957,5 +947,5 @@ class MeowVerseProvider(Provider):
                 )
 
             except Exception as e:
-                print(f"[VegaMovies] Error: {e}")
+                # print(f"[VegaMovies] Error: {e}")
                 return None

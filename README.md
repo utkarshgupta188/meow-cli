@@ -50,6 +50,36 @@ pip install -U meowtv
 - **[mpv](https://mpv.io/)** (Highly recommended) or **VLC**.
 - **[FFmpeg](https://ffmpeg.org/)** (Required for HLS downloads).
 
+#### Windows (via Scoop)
+```powershell
+# Install Scoop (if not already installed)
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+
+# Install dependencies
+scoop install mpv ffmpeg
+```
+
+#### macOS (via Homebrew)
+```bash
+# Install Homebrew (if not already installed)
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install dependencies
+brew install mpv ffmpeg
+```
+
+#### Linux (via Package Manager)
+**Ubuntu/Debian:**
+```bash
+sudo apt update && sudo apt install mpv ffmpeg
+```
+
+**Arch Linux:**
+```bash
+sudo pacman -S mpv ffmpeg
+```
+
 ---
 
 ## 🚀 Quick Start
