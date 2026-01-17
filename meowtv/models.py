@@ -95,6 +95,7 @@ class VideoResponse:
     qualities: list[Quality] = field(default_factory=list)
     audio_tracks: list[Track] = field(default_factory=list)
     headers: dict[str, str] = field(default_factory=dict)
+    force_seekable: bool = False
 
 
 @dataclass

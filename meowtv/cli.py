@@ -397,7 +397,7 @@ def search(query: str, provider: Optional[str], interactive: bool):
             
             if stream:
                 console.print(f"[green]▶ Playing: {ep_title}[/]")
-                play(stream, title=ep_title, suppress_output=("meowverse" not in prov.name.lower()))
+                run_async(play(stream, title=ep_title, suppress_output=("meowverse" not in prov.name.lower())))
             else:
                 console.print("[red]Failed to get stream[/]")
     else:
@@ -482,14 +482,11 @@ def play_cmd(content_id: str, episode: Optional[str], provider: Optional[str], p
     console.print(f"[green]▶ Playing: {title}[/]")
     console.print(f"[dim]Player: {player} | Quality: {quality or 'auto'}[/]")
     
-    process = play(stream, player=player, title=title, quality=quality, suppress_output=("meowverse" not in prov.name.lower()))
+    process = run_async(play(stream, player=player, title=title, quality=quality, suppress_output=("meowverse" not in prov.name.lower())))
     
     if process:
-        console.print("[dim]Press Ctrl+C to return to terminal[/]")
-        try:
-            process.wait()
-        except KeyboardInterrupt:
-            process.terminate()
+        # process.wait() # Already handled in player.play(), but safe to call if needed
+        pass
 
 
 @main.command("download")
@@ -800,12 +797,7 @@ def interactive_mode():
                         stream = run_async(prov.fetch_stream(args, ep_id))
                         if stream:
                             console.print(f"[green]▶ Playing: {details.title}[/]")
-                            process = play(stream, title=details.title, suppress_output=("meowverse" not in prov.name.lower()))
-                            if process:
-                                try:
-                                    process.wait()
-                                except KeyboardInterrupt:
-                                    process.terminate()
+                            run_async(play(stream, title=details.title, suppress_output=("meowverse" not in prov.name.lower())))
                         else:
                             console.print("[red]Failed to load stream[/]")
                     else:

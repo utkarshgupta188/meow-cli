@@ -113,3 +113,6 @@ dmypy.json
 
 # MeowTV specific
 favorites.json
+
+get_id.py
+test_play.py
