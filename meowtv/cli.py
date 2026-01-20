@@ -355,95 +355,97 @@ def search(query: str, provider: Optional[str], interactive: bool):
             choices=choices,
         ).ask()
         
-        if selected and hasattr(selected, 'title'):
-            console.print(f"\n[dim]Loading {selected.title}...[/]")
+        if not selected or not hasattr(selected, 'id'):
+            return
+        
+        console.print(f"\n[dim]Loading {selected.title}...[/]")
+        
+        # Fetch details first
+        async def get_details():
+            return await prov.fetch_details(selected.id)
+        
+        details = run_async(get_details())
+        
+        if not details:
+            console.print("[red]Failed to load details[/]")
+            return
+        
+        # If it's a series with episodes, let user select
+        ep_id = None
+        if details.episodes and len(details.episodes) > 1:
+            # Group episodes by season
+            seasons = {}
+            for ep in details.episodes:
+                s = ep.season
+                if s not in seasons:
+                    seasons[s] = []
+                seasons[s].append(ep)
             
-            # Fetch details first
-            async def get_details():
-                return await prov.fetch_details(selected.id)
-            
-            details = run_async(get_details())
-            
-            if not details:
-                console.print("[red]Failed to load details[/]")
-                return
-            
-            # If it's a series with episodes, let user select
-            ep_id = None
-            if details.episodes and len(details.episodes) > 1:
-                # Group episodes by season
-                seasons = {}
-                for ep in details.episodes:
-                    s = ep.season
-                    if s not in seasons:
-                        seasons[s] = []
-                    seasons[s].append(ep)
-                
-                # If multiple seasons, let user select season first
-                if len(seasons) > 1:
-                    season_choices = [
-                        questionary.Choice(
-                            title=f"Season {s} ({len(eps)} episodes)",
-                            value=s
-                        )
-                        for s, eps in sorted(seasons.items())
-                    ]
-                    season_choices.append(questionary.Choice(title="[Cancel]", value=None))
-                    
-                    selected_season = questionary.select(
-                        "Select season:",
-                        choices=season_choices,
-                    ).ask()
-                    
-                    if not selected_season:
-                        return
-                    
-                    season_episodes = seasons[selected_season]
-                else:
-                    # Single season
-                    season_episodes = details.episodes
-                
-                # Let user select episode
-                ep_choices = [
+            # If multiple seasons, let user select season first
+            if len(seasons) > 1:
+                season_choices = [
                     questionary.Choice(
-                        title=f"S{ep.season}E{ep.number}: {ep.title or f'Episode {ep.number}'}",
-                        value=ep
+                        title=f"Season {s} ({len(eps)} episodes)",
+                        value=s
                     )
-                    for ep in season_episodes
+                    for s, eps in sorted(seasons.items())
                 ]
-                ep_choices.append(questionary.Choice(title="[Cancel]", value=None))
+                season_choices.append(questionary.Choice(title="[Cancel]", value=None))
                 
-                selected_ep = questionary.select(
-                    "Select episode:",
-                    choices=ep_choices,
+                selected_season = questionary.select(
+                    "Select season:",
+                    choices=season_choices,
                 ).ask()
                 
-                if not selected_ep:
+                if not selected_season:
                     return
                 
-                ep_id = selected_ep.id
-                ep_title = f"{details.title} - {selected_ep.title or f'S{selected_ep.season}E{selected_ep.number}'}"
-            elif details.episodes:
-                # Single episode (movie)
-                ep_id = details.episodes[0].id
-                ep_title = details.title
+                season_episodes = seasons[selected_season]
             else:
-                console.print("[red]No episodes found[/]")
+                # Single season
+                season_episodes = details.episodes
+            
+            # Let user select episode
+            ep_choices = [
+                questionary.Choice(
+                    title=f"S{ep.season}E{ep.number}: {ep.title or f'Episode {ep.number}'}",
+                    value=ep
+                )
+                for ep in season_episodes
+            ]
+            ep_choices.append(questionary.Choice(title="[Cancel]", value=None))
+            
+            selected_ep = questionary.select(
+                "Select episode:",
+                choices=ep_choices,
+            ).ask()
+            
+            if not selected_ep:
                 return
             
-            # Fetch stream
-            console.print(f"[dim]Loading stream...[/]")
-            
-            async def get_stream():
-                return await prov.fetch_stream(selected.id, ep_id)
-            
-            stream = run_async(get_stream())
-            
-            if stream:
-                console.print(f"[green]▶ Playing: {ep_title}[/]")
-                run_async(play(stream, title=ep_title, suppress_output=("meowverse" not in prov.name.lower())))
-            else:
-                console.print("[red]Failed to get stream[/]")
+            ep_id = selected_ep.id
+            ep_title = f"{details.title} - {selected_ep.title or f'S{selected_ep.season}E{selected_ep.number}'}"
+        elif details.episodes:
+            # Single episode (movie)
+            ep_id = details.episodes[0].id
+            ep_title = details.title
+        else:
+            console.print("[red]No episodes found[/]")
+            return
+        
+        # Fetch stream
+        console.print(f"[dim]Loading stream...[/]")
+        
+        async def get_stream():
+            return await prov.fetch_stream(selected.id, ep_id)
+        
+        stream = run_async(get_stream())
+        
+        if stream:
+            console.print(f"[green]▶ Playing: {ep_title}[/]")
+            run_async(play(stream, title=ep_title, suppress_output=("meowverse" not in prov.name.lower())))
+        else:
+            console.print("[red]Failed to get stream[/]")
     else:
         console.print(f"\n[dim]Use 'meowtv play <id>' to play[/]")
 
