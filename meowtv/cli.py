@@ -34,6 +34,47 @@ def get_all_provider_names() -> list[str]:
     return ["meowverse", "meowtv", "meowtoon"]
 
 
+# ===== UPDATE CHECKER =====
+
+_update_checked = False  # Only check once per session
+
+def check_for_updates():
+    """Check PyPI for new version and display update message if available."""
+    global _update_checked
+    if _update_checked:
+        return
+    _update_checked = True
+    
+    try:
+        import urllib.request
+        import json
+        
+        # Quick timeout to avoid blocking
+        req = urllib.request.Request(
+            "https://pypi.org/pypi/meowtv/json",
+            headers={"User-Agent": "MeowTV-CLI"}
+        )
+        with urllib.request.urlopen(req, timeout=2) as response:
+            data = json.loads(response.read().decode())
+            latest = data.get("info", {}).get("version", "")
+            
+            if latest and latest != __version__:
+                # Compare versions (simple string comparison works for semver)
+                from packaging import version
+                try:
+                    if version.parse(latest) > version.parse(__version__):
+                        console.print(f"\n[yellow]⬆ Update available:[/] [bold]{__version__}[/] → [bold green]{latest}[/]")
+                        console.print(f"[dim]  Run: pip install --upgrade meowtv[/]\n")
+                except:
+                    # Fallback: simple string compare
+                    if latest > __version__:
+                        console.print(f"\n[yellow]⬆ Update available:[/] [bold]{__version__}[/] → [bold green]{latest}[/]")
+                        console.print(f"[dim]  Run: pip install --upgrade meowtv[/]\n")
+    except:
+        # Silently fail - don't block user
+        pass
+
+
 # ===== DISPLAY HELPERS =====
 
 def display_banner():
@@ -149,6 +190,9 @@ def main(ctx, version):
     # Initialize proxy from config
     config = get_config()
     set_proxy_url(config.proxy_url)
+    
+    # Check for updates (runs once per session)
+    check_for_updates()
     
     if ctx.invoked_subcommand is None:
         # Interactive mode
@@ -405,12 +449,31 @@ def search(query: str, provider: Optional[str], interactive: bool):
 
 
 @main.command()
-@click.argument("content_id")
+@click.argument("query_or_id", required=False)
 @click.option("--provider", "-p", default=None, help="Provider name")
-def details(content_id: str, provider: Optional[str]):
-    """Show content details."""
+def details(query_or_id: Optional[str], provider: Optional[str]):
+    """Show content details (ID or search query)."""
     config = get_config()
     provider_name = provider or config.default_provider
+    
+    # Resolve content_id from query if needed
+    content_id = None
+    
+    if not query_or_id:
+        # No arg -> interactive search
+        selected, _, _ = select_content_interactively(provider_name)
+        if not selected:
+            return
+        content_id = selected.id
+    elif query_or_id.isdigit():
+        # Direct ID
+        content_id = query_or_id
+    else:
+        # Search query -> interactive
+        selected, _, _ = select_content_interactively(provider_name, query=query_or_id)
+        if not selected:
+            return
+        content_id = selected.id
     
     prov = get_provider_instance(provider_name)
     if not prov:
@@ -432,16 +495,41 @@ def details(content_id: str, provider: Optional[str]):
 
 
 @main.command("play")
-@click.argument("content_id")
+@click.argument("query_or_id", required=False)
 @click.option("--episode", "-e", default=None, help="Episode ID (for series)")
 @click.option("--provider", "-p", default=None, help="Provider name")
 @click.option("--player", type=click.Choice(["mpv", "vlc"]), default=None, help="Player to use")
 @click.option("--quality", "-q", default=None, help="Quality (1080p, 720p, 480p)")
-def play_cmd(content_id: str, episode: Optional[str], provider: Optional[str], player: Optional[str], quality: Optional[str]):
-    """Play content."""
+def play_cmd(query_or_id: Optional[str], episode: Optional[str], provider: Optional[str], player: Optional[str], quality: Optional[str]):
+    """Play content (ID or search query)."""
     config = get_config()
     provider_name = provider or config.default_provider
     player = player or config.default_player
+    
+    # Resolve content
+    content_id = None
+    ep_id = episode
+    title = "MeowTV Stream"
+    
+    if not query_or_id:
+        # No arg -> interactive search
+        selected, sel_ep_id, sel_title = select_content_interactively(provider_name)
+        if not selected:
+            return
+        content_id = selected.id
+        ep_id = sel_ep_id
+        title = sel_title
+    elif query_or_id.isdigit():
+        # Direct ID
+        content_id = query_or_id
+    else:
+        # Search query -> interactive
+        selected, sel_ep_id, sel_title = select_content_interactively(provider_name, query=query_or_id)
+        if not selected:
+            return
+        content_id = selected.id
+        ep_id = sel_ep_id
+        title = sel_title
     
     prov = get_provider_instance(provider_name)
     if not prov:
@@ -453,15 +541,16 @@ def play_cmd(content_id: str, episode: Optional[str], provider: Optional[str], p
         return
     
     async def do_play():
-        # Get details first
-        details = await prov.fetch_details(content_id)
-        if not details:
-            return None, None
+        nonlocal ep_id, title
         
-        # Select episode
-        ep_id = episode
-        if not ep_id and details.episodes:
-            ep_id = details.episodes[0].id
+        # If direct ID without interactive selection, fetch details
+        if query_or_id and query_or_id.isdigit():
+            details = await prov.fetch_details(content_id)
+            if not details:
+                return None, None
+            title = details.title
+            if not ep_id and details.episodes:
+                ep_id = details.episodes[0].id
         
         if not ep_id:
             console.print("[red]No episode ID found[/]")
@@ -469,23 +558,21 @@ def play_cmd(content_id: str, episode: Optional[str], provider: Optional[str], p
         
         # Get stream
         stream = await prov.fetch_stream(content_id, ep_id)
-        return details, stream
+        return title, stream
     
     console.print(f"[dim]Loading stream from {prov.name}...[/]")
-    details_result, stream = run_async(do_play())
+    result_title, stream = run_async(do_play())
     
     if not stream:
         console.print("[red]Failed to get stream URL[/]")
         return
     
-    title = details_result.title if details_result else "MeowTV Stream"
-    console.print(f"[green]▶ Playing: {title}[/]")
+    console.print(f"[green]▶ Playing: {result_title}[/]")
     console.print(f"[dim]Player: {player} | Quality: {quality or 'auto'}[/]")
     
-    process = run_async(play(stream, player=player, title=title, quality=quality, suppress_output=("meowverse" not in prov.name.lower())))
+    process = run_async(play(stream, player=player, title=result_title, quality=quality, suppress_output=("meowverse" not in prov.name.lower())))
     
     if process:
-        # process.wait() # Already handled in player.play(), but safe to call if needed
         pass
 
 
@@ -604,12 +691,31 @@ def favorites_list():
 
 
 @favorites.command("add")
-@click.argument("content_id")
+@click.argument("query_or_id", required=False)
 @click.option("--provider", "-p", default=None, help="Provider name")
-def favorites_add(content_id: str, provider: Optional[str]):
-    """Add content to favorites."""
+def favorites_add(query_or_id: Optional[str], provider: Optional[str]):
+    """Add content to favorites (ID or search query)."""
     config = get_config()
     provider_name = provider or config.default_provider
+    
+    # Resolve content_id
+    content_id = None
+    
+    if not query_or_id:
+        # No arg -> interactive search
+        selected, _, _ = select_content_interactively(provider_name)
+        if not selected:
+            return
+        content_id = selected.id
+    elif query_or_id.isdigit():
+        # Direct ID
+        content_id = query_or_id
+    else:
+        # Search query -> interactive
+        selected, _, _ = select_content_interactively(provider_name, query=query_or_id)
+        if not selected:
+            return
+        content_id = selected.id
     
     prov = get_provider_instance(provider_name)
     if not prov:
