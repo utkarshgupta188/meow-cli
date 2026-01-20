@@ -120,7 +120,7 @@ def proxy_hls():
     referer = request.args.get('referer', '')
     cookie = request.args.get('cookie', '')
     kind = request.args.get('kind', 'segment')
-    print(f"[Proxy] Request: {kind.upper()} -> {url}")
+    # Silent - no debug output
     
     if not url:
         return "Missing URL", 400
@@ -159,7 +159,7 @@ def proxy_hls():
                           content_type=req.headers.get('Content-Type'))
                           
     except Exception as e:
-        print(f"[Flask Proxy] Error processing {url}: {e}")
+        # print(f"[Flask Proxy] Error processing {url}: {e}")
         return f"Error: {e}", 500
 
 class ProxyServer:
@@ -178,13 +178,27 @@ class ProxyServer:
         _proxy_config["port"] = self.port
         
         def run_app():
-            # threaded=True is default. use_reloader=False prevents restarting.
-            app.run(host='127.0.0.1', port=self.port, threaded=True, use_reloader=False)
+            import sys, os, click
+            # Suppress ALL Flask startup messages
+            devnull = open(os.devnull, 'w')
+            old_stdout = sys.stdout
+            old_stderr = sys.stderr
+            sys.stdout = devnull
+            sys.stderr = devnull
+            try:
+                # Also disable Flask CLI banner
+                import flask.cli
+                flask.cli.show_server_banner = lambda *args, **kwargs: None
+                app.run(host='127.0.0.1', port=self.port, threaded=True, use_reloader=False)
+            finally:
+                sys.stdout = old_stdout
+                sys.stderr = old_stderr
             
         self.server_thread = threading.Thread(target=run_app, daemon=True)
         self.server_thread.start()
         
-        print(f"[CLI Proxy] Flask Server started on http://127.0.0.1:{self.port}")
+        # Silent start
+        pass
         return self.port
         
     def stop(self):

@@ -55,7 +55,7 @@ async def download_subtitles(subtitles: list[Subtitle]) -> list[tuple[str, str]]
             if not sub.url.startswith("http"):
                 return None
             try:
-                print(f"[Player] Downloading subtitle: {sub.label or sub.url}...")
+                # Silent download
                 res = await client.get(sub.url)
                 if res.status_code == 200:
                     ext = ".srt"
@@ -65,12 +65,12 @@ async def download_subtitles(subtitles: list[Subtitle]) -> list[tuple[str, str]]
                     fd, path = tempfile.mkstemp(suffix=ext, prefix="meowtv_sub_")
                     os.write(fd, res.content)
                     os.close(fd)
-                    print(f"[Player] Saved subtitle to: {path} ({len(res.content)} bytes)")
+                    # print(f"[Player] Saved subtitle to: {path} ({len(res.content)} bytes)")
                     return (sub.url, path)
                 else:
-                    print(f"[Player] Failed to download subtitle (Status {res.status_code})")
+                    pass  # Silent fail
             except Exception as e:
-                print(f"[Player] Error downloading subtitle: {e}")
+                pass  # Silent error
             return None
 
         results = await asyncio.gather(*(fetch_one(s) for s in subtitles))
@@ -247,6 +247,7 @@ async def play(
         use_proxy = True
     
     if use_proxy:
+        print("Loading player...", end="\r")  # Show loading, will be overwritten
         try:
             from meowtv.proxy import start_hls_proxy, build_proxy_url
             
@@ -259,9 +260,9 @@ async def play(
             url = build_proxy_url(port, url, referer, cookie)
             
             actual_headers = {}  # No headers needed for local proxy
-            print(f"[Player] Using local proxy for playback at port {port}")
+            # print(f"[Player] Using local proxy for playback at port {port}")
         except Exception as e:
-            print(f"[Player] Failed to start proxy: {e}, trying direct playback")
+            pass  # Silent fallback
     
     # Handle subtitles (VLC needs local files for remote subtitles usually)
     local_subs_info = []
@@ -300,7 +301,7 @@ async def play(
     process = None
     try:
         # Call directly without shell=True to avoid quoting issues with headers
-        print(f"[Player] Launching: {' '.join(args)}")
+        # Silent launch
         
         # We start as Popen so we can handle cleanup if needed, 
         # but for simplicity in CLI we wait and then cleanup.
