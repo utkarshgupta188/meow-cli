@@ -53,6 +53,9 @@ def download_with_ytdlp(
         "-o", str(output_path),
         "--no-warnings",
         "--progress",
+        "--merge-output-format", "mp4",  # Ensure output is mp4
+        "--embed-subs",  # Embed subtitles if available
+        "--audio-multistreams",  # Download and merge all audio tracks
     ]
     
     # Add headers
@@ -60,15 +63,23 @@ def download_with_ytdlp(
         for key, value in headers.items():
             args.extend(["--add-header", f"{key}: {value}"])
     
-    # Add quality format
-    if quality:
-        quality_map = {
-            "1080p": "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
-            "720p": "bestvideo[height<=720]+bestaudio/best[height<=720]",
-            "480p": "bestvideo[height<=480]+bestaudio/best[height<=480]",
-        }
-        format_str = quality_map.get(quality, "best")
-        args.extend(["-f", format_str])
+    # Format selection strategy for "All Audio" + "Robust Fix" + "Generic Fallback":
+    # 1. bestvideo + all audio-only + best English variant (Fixes provider where English is hidden in video var)
+    # 2. bestvideo + all audio-only (Gets separate audios like Spanish)
+    # 3. bestvideo + best[format_id*=English] (Fallback fix)
+    # 4. bestvideo + bestaudio (Standard)
+    # 5. best (Single file)
+    quality_map = {
+        "1080p": "bestvideo[height<=1080]+mergeall[vcodec=none]+best[height<=1080][format_id*=English]/bestvideo[height<=1080]+mergeall[vcodec=none]/best[height<=1080]/best",
+        "720p": "bestvideo[height<=720]+mergeall[vcodec=none]+best[height<=720][format_id*=English]/bestvideo[height<=720]+mergeall[vcodec=none]/best[height<=720]/best",
+        "480p": "bestvideo[height<=480]+mergeall[vcodec=none]+best[height<=480][format_id*=English]/bestvideo[height<=480]+mergeall[vcodec=none]/best[height<=480]/best",
+    }
+    if quality and quality in quality_map:
+        format_str = quality_map[quality]
+    else:
+        # Default robust chain
+        format_str = "bestvideo+mergeall[vcodec=none]+best[format_id*=English]/bestvideo+mergeall[vcodec=none]/bestvideo+best[format_id*=English]/bestvideo+bestaudio/best"
+    args.extend(["-f", format_str])
     
     try:
         process = subprocess.Popen(

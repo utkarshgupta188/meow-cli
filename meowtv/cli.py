@@ -1,6 +1,7 @@
 """MeowTV CLI - Main command-line interface."""
 
 import asyncio
+from pathlib import Path
 from typing import Optional
 
 import click
@@ -204,10 +205,11 @@ def main(ctx, version):
 
 
 
-def select_content_interactively(provider_name: str, query: str = None) -> tuple[Optional[ContentItem], Optional[str], Optional[str]]:
+def select_content_interactively(provider_name: str, query: str = None, allow_season_download: bool = False) -> tuple[Optional[ContentItem], Optional[str], Optional[str], Optional[str]]:
     """
     Interactively search and select content/episode.
-    Returns: (content_item, episode_id, episode_title)
+    Returns: (content_item, source_id, episode_id, episode_title)
+    If allow_season_download is True, episode_id can be "ALL_S{season_num}"
     """
     import questionary
     
@@ -217,7 +219,7 @@ def select_content_interactively(provider_name: str, query: str = None) -> tuple
     
     if not prov:
         console.print(f"[red]Provider '{prov_name}' not found[/]")
-        return None, None, None
+        return None, None, None, None
     
     # 1. Search
     if not query:
@@ -228,7 +230,7 @@ def select_content_interactively(provider_name: str, query: str = None) -> tuple
     
     if not results:
         console.print("[yellow]No results found[/]")
-        return None, None, None
+        return None, None, None, None
     
     # 2. Select Content
     choices = [
@@ -246,17 +248,18 @@ def select_content_interactively(provider_name: str, query: str = None) -> tuple
     ).ask()
     
     if not selected:
-        return None, None, None
+        return None, None, None, None
     
     console.print(f"\n[dim]Loading {selected.title}...[/]")
     details = run_async(prov.fetch_details(selected.id))
     
     if not details:
         console.print("[red]Failed to load details[/]")
-        return None, None, None
+        return None, None, None, None
     
     # 3. Select Episode (if applicable)
     ep_id = None
+    source_id = selected.id  # Default to main ID
     ep_title = details.title
     
     if details.episodes and len(details.episodes) > 1:
@@ -278,33 +281,52 @@ def select_content_interactively(provider_name: str, query: str = None) -> tuple
             
             selected_season = questionary.select("Select season:", choices=season_choices).ask()
             if not selected_season:
-                return None, None, None
+                return None, None, None, None
             season_episodes = seasons[selected_season]
         else:
+            selected_season = list(seasons.keys())[0] if seasons else 1
             season_episodes = details.episodes
         
         # Select Episode
-        ep_choices = [
+        ep_choices = []
+        
+        # Add "Download Whole Season" option if enabled
+        if allow_season_download:
+             ep_choices.append(questionary.Choice(
+                title=f"📥 Download Whole Season {selected_season} ({len(season_episodes)} eps)",
+                value=f"ALL_S{selected_season}"
+            ))
+
+        ep_choices.extend([
             questionary.Choice(
                 title=f"S{ep.season}E{ep.number}: {ep.title or f'Episode {ep.number}'}",
                 value=ep
             )
             for ep in season_episodes
-        ]
+        ])
         ep_choices.append(questionary.Choice(title="[Cancel]", value=None))
         
         selected_ep = questionary.select("Select episode:", choices=ep_choices).ask()
         if not selected_ep:
-            return None, None, None
+            return None, None, None, None
         
-        ep_id = selected_ep.id
-        ep_title = f"{details.title} - {selected_ep.title or f'S{selected_ep.season}E{selected_ep.number}'}"
+        if isinstance(selected_ep, str) and selected_ep.startswith("ALL_s"): # Handle lowercase too just in case
+             ep_id = selected_ep
+             ep_title = f"Season {selected_season}"
+        elif isinstance(selected_ep, str) and selected_ep.startswith("ALL_S"):
+             ep_id = selected_ep
+             ep_title = f"Season {selected_season}"
+        else:
+            ep_id = selected_ep.id
+            source_id = selected_ep.source_movie_id or selected.id
+            ep_title = f"{details.title} - {selected_ep.title or f'S{selected_ep.season}E{selected_ep.number}'}"
     
     elif details.episodes:
         # Movie / Single episode
         ep_id = details.episodes[0].id
+        source_id = details.episodes[0].source_movie_id or selected.id
     
-    return selected, ep_id, ep_title
+    return selected, source_id, ep_id, ep_title
 
 
 @main.command()
@@ -436,8 +458,20 @@ def search(query: str, provider: Optional[str], interactive: bool):
         # Fetch stream
         console.print(f"[dim]Loading stream...[/]")
         
+        # Fetch stream
+        console.print(f"[dim]Loading stream...[/]")
+        
         async def get_stream():
-            return await prov.fetch_stream(selected.id, ep_id)
+            # Resolving source_id locally for duplicates search logic
+            # We need to find the episode in details to get source_movie_id if we didn't use the helper
+            # But here we have 'details' variable available from earlier in this scope!
+            source_id = selected.id
+            if ep_id and details.episodes:
+                 target_ep = next((e for e in details.episodes if e.id == ep_id), None)
+                 if target_ep and target_ep.source_movie_id:
+                     source_id = target_ep.source_movie_id
+            
+            return await prov.fetch_stream(source_id, ep_id)
         
         stream = run_async(get_stream())
         
@@ -463,7 +497,7 @@ def details(query_or_id: Optional[str], provider: Optional[str]):
     
     if not query_or_id:
         # No arg -> interactive search
-        selected, _, _ = select_content_interactively(provider_name)
+        selected, _, _, _ = select_content_interactively(provider_name)
         if not selected:
             return
         content_id = selected.id
@@ -472,7 +506,7 @@ def details(query_or_id: Optional[str], provider: Optional[str]):
         content_id = query_or_id
     else:
         # Search query -> interactive
-        selected, _, _ = select_content_interactively(provider_name, query=query_or_id)
+        selected, _, _, _ = select_content_interactively(provider_name, query=query_or_id)
         if not selected:
             return
         content_id = selected.id
@@ -515,10 +549,10 @@ def play_cmd(query_or_id: Optional[str], episode: Optional[str], provider: Optio
     
     if not query_or_id:
         # No arg -> interactive search
-        selected, sel_ep_id, sel_title = select_content_interactively(provider_name)
+        selected, source_id, sel_ep_id, sel_title = select_content_interactively(provider_name)
         if not selected:
             return
-        content_id = selected.id
+        content_id = source_id or selected.id
         ep_id = sel_ep_id
         title = sel_title
     elif query_or_id.isdigit():
@@ -526,10 +560,10 @@ def play_cmd(query_or_id: Optional[str], episode: Optional[str], provider: Optio
         content_id = query_or_id
     else:
         # Search query -> interactive
-        selected, sel_ep_id, sel_title = select_content_interactively(provider_name, query=query_or_id)
+        selected, source_id, sel_ep_id, sel_title = select_content_interactively(provider_name, query=query_or_id)
         if not selected:
             return
-        content_id = selected.id
+        content_id = source_id or selected.id
         ep_id = sel_ep_id
         title = sel_title
     
@@ -543,8 +577,9 @@ def play_cmd(query_or_id: Optional[str], episode: Optional[str], provider: Optio
         return
     
     async def do_play():
-        nonlocal ep_id, title
+        nonlocal ep_id, title, content_id
         
+        # If direct ID without interactive selection, fetch details
         # If direct ID without interactive selection, fetch details
         if query_or_id and query_or_id.isdigit():
             details = await prov.fetch_details(content_id)
@@ -552,8 +587,24 @@ def play_cmd(query_or_id: Optional[str], episode: Optional[str], provider: Optio
                 return None, None
             title = details.title
             if not ep_id and details.episodes:
-                ep_id = details.episodes[0].id
-        
+                # Default to first episode
+                ep = details.episodes[0]
+                ep_id = ep.id
+                # Fix for MeowTV: update content_id if source_movie_id differs
+                if ep.source_movie_id and ep.source_movie_id != content_id:
+                    # We can't easily change content_id here as it's captured in closure?
+                    # Actually we can if we make it nonlocal or just return it?
+                    # Simpler: just use it for the fetch_stream call below
+                    pass 
+
+            # If we have an ep_id (either provided or defaulted), we must ensure we use the correct source_movie_id
+            if ep_id and details.episodes:
+                # Find the episode object
+                target_ep = next((e for e in details.episodes if e.id == ep_id), None)
+                if target_ep and target_ep.source_movie_id:
+                     # Update content_id for the stream fetch
+                     content_id = target_ep.source_movie_id
+
         if not ep_id:
             console.print("[red]No episode ID found[/]")
             return None, None
@@ -581,10 +632,12 @@ def play_cmd(query_or_id: Optional[str], episode: Optional[str], provider: Optio
 @main.command("download")
 @click.argument("query_or_id", required=False)
 @click.option("--episode", "-e", default=None, help="Episode ID (for series)")
+@click.option("--season", "-s", type=int, default=None, help="Season number to download entirely")
 @click.option("--provider", "-p", default=None, help="Provider name")
 @click.option("--output", "-o", default=None, help="Output directory")
 @click.option("--quality", "-q", default=None, help="Quality (1080p, 720p, 480p)")
-def download_cmd(query_or_id: Optional[str], episode: Optional[str], provider: Optional[str], output: Optional[str], quality: Optional[str]):
+@click.option("--yes", "-y", is_flag=True, help="Skip confirmation for batch downloads")
+def download_cmd(query_or_id: Optional[str], episode: Optional[str], season: Optional[int], provider: Optional[str], output: Optional[str], quality: Optional[str], yes: bool):
     """Download content (ID or Query)."""
     if not is_download_available():
         console.print("[red]Neither yt-dlp nor ffmpeg found. Install one to enable downloads.[/]")
@@ -597,15 +650,17 @@ def download_cmd(query_or_id: Optional[str], episode: Optional[str], provider: O
     content_id = None
     ep_id = episode
     title = "Download"
+    is_interactive = False
     
     # Case 1: No arg provided -> Interactive Search
     if not query_or_id:
-        selected, sel_ep_id, sel_ep_title = select_content_interactively(provider_name)
+        selected, source_id, sel_ep_id, sel_ep_title = select_content_interactively(provider_name, allow_season_download=True)
         if not selected:
             return
-        content_id = selected.id
+        content_id = source_id or selected.id
         ep_id = sel_ep_id
         title = sel_ep_title
+        is_interactive = True
         
     # Case 2: ID provided (digits)
     elif query_or_id.isdigit():
@@ -613,28 +668,86 @@ def download_cmd(query_or_id: Optional[str], episode: Optional[str], provider: O
         
     # Case 3: Query provided -> Interactive Search
     else:
-        selected, sel_ep_id, sel_ep_title = select_content_interactively(provider_name, query=query_or_id)
+        selected, source_id, sel_ep_id, sel_ep_title = select_content_interactively(provider_name, query=query_or_id, allow_season_download=True)
         if not selected:
             return
-        content_id = selected.id
+        content_id = source_id or selected.id
         ep_id = sel_ep_id
         title = sel_ep_title
+        is_interactive = True
 
     prov = get_provider_instance(provider_name)
     if not prov:
         console.print(f"[red]Provider '{provider_name}' not found[/]")
         return
 
-    # If we have ID but no stream info yet (Direct ID case)
-    stream = None
-    if not stream: # Logic flow: if interactive, we might want to pass stream? 
-                   # But helper returns IDs. We need to fetch stream.
+    # --- Batch Download Logic ---
+    target_season = season
+    
+    # Check if interactive selected "ALL_S{x}"
+    if ep_id and isinstance(ep_id, str) and ep_id.startswith("ALL_S"):
+        try:
+            target_season = int(ep_id.replace("ALL_S", ""))
+            ep_id = None # Clear ep_id so we trigger batch logic
+        except: pass
         
-        # Helper returned ep_id, but we need to fetch stream if likely.
-        # Check if we have details/stream url? 
-        # Helper returns (item, ep_id, title)
-        # So we just proceed to fetch stream.
-        pass
+    if target_season is not None:
+        # Fetch details to get all episodes for season
+        console.print(f"[dim]Fetching season {target_season} details...[/]")
+        details = run_async(prov.fetch_details(content_id))
+        
+        if not details:
+            console.print("[red]Content not found[/]")
+            return
+            
+        # Filter episodes by season
+        season_eps = [ep for ep in details.episodes if ep.season == target_season]
+        
+        if not season_eps:
+             console.print(f"[red]No episodes found for Season {target_season}[/]")
+             return
+             
+        console.print(f"[cyan]Found {len(season_eps)} episodes in Season {target_season}[/]")
+        
+        if not yes and not is_interactive: # If interactive, user explicitly chose "Download Whole Season"
+             if not click.confirm(f"Download all {len(season_eps)} episodes?"):
+                 return
+
+        # Prepare directory: Output > Show Name > Season X
+        base_output = output or config.download_dir
+        
+        # Clean show title
+        safe_show = "".join(c for c in details.title if c.isalnum() or c in " -_").strip()[:50]
+        season_dir = Path(base_output) / safe_show / f"Season {target_season}"
+        
+        console.print(f"[dim]Downloading to: {season_dir}[/]")
+        
+        success_count = 0
+        for i, ep in enumerate(season_eps, 1):
+             ep_title = f"{details.title} - {ep.title or f'S{ep.season}E{ep.number}'}"
+             console.print(f"\n[bold]({i}/{len(season_eps)}) {ep_title}[/]")
+             
+             try:
+                 # Fetch stream
+                 # Use source_movie_id for the episode if available
+                 ep_source_id = ep.source_movie_id or content_id
+                 stream = run_async(prov.fetch_stream(ep_source_id, ep.id))
+                 if stream:
+                     dl_res = download(stream, ep_title, output_dir=season_dir, quality=quality)
+                     if dl_res:
+                         console.print(f"[green]✓ Done[/]")
+                         success_count += 1
+                     else:
+                         console.print("[red]Failed[/]")
+                 else:
+                     console.print("[red]No stream[/]")
+             except Exception as e:
+                 console.print(f"[red]Error: {e}[/]")
+                 
+        console.print(f"\n[green]Batch download finished: {success_count}/{len(season_eps)} successful[/]")
+        return
+        
+    # --- Single Episode Logic (Existing) ---
 
     async def do_fetch():
         # If we selected interactively, we have ep_id.
@@ -652,26 +765,44 @@ def download_cmd(query_or_id: Optional[str], episode: Optional[str], provider: O
                 return details, None
              
             final_ep_id = target_ep_id
-            final_title = details.title
+            final_title = f"{details.title} - {details.episodes[0].title}"
+            
+            # Auto-create directory for single file too?
+            # User request: "change directory of download" -> implied structure?
+            # Let's add partial structure: Show Name/Season X/
+            s_num = details.episodes[0].season
+            return final_title, await prov.fetch_stream(content_id, final_ep_id), details.title, s_num
         else:
             final_ep_id = ep_id
-            # We might not have full title if direct ID used, but that's fine.
             final_title = title 
+            # We don't verify season here easily without details, stick to standard
+            return final_title, await prov.fetch_stream(content_id, final_ep_id), None, None
 
-        stream_res = await prov.fetch_stream(content_id, final_ep_id)
-        return final_title, stream_res
-    
     console.print(f"[dim]Preparing download from {prov.name}...[/]")
-    result_title, stream = run_async(do_fetch())
+    result = run_async(do_fetch())
+    
+    if not result:
+         return
+         
+    if len(result) == 4:
+         result_title, stream, show_title, s_num = result
+    else:
+         result_title, stream = result[:2]
+         show_title, s_num = None, None
     
     if not stream:
         console.print("[red]Failed to get stream URL[/]")
         return
     
-    # If title was generic, update it? 
-    # Actually run_async returns result_title which logic above handles.
-    
-    dl_res = download(stream, result_title, output_dir=output, quality=quality)
+    # Enhanced Directory for Single Episodes as well
+    final_output = output
+    if not final_output and show_title and s_num:
+         config = get_config()
+         base = config.download_dir
+         safe_show = "".join(c for c in show_title if c.isalnum() or c in " -_").strip()[:50]
+         final_output = Path(base) / safe_show / f"Season {s_num}"
+
+    dl_res = download(stream, result_title, output_dir=final_output, quality=quality)
     
     if dl_res:
         console.print(f"[green]✓ Downloaded: {dl_res}[/]")
