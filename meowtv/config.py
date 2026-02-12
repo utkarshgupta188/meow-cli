@@ -31,7 +31,7 @@ class Config:
     default_player: Literal["mpv", "vlc"] = "mpv"
     default_provider: str = "meowtv"
     download_dir: str = str(Path.home() / "Downloads" / "MeowTV")
-    proxy_url: str = "https://meowserver.utkarshg.workers.dev"
+    proxy_url: str = "https://meowtvserver.utkarshg.workers.dev"
     preferred_quality: str = "1080p"
     mpv_args: list[str] = field(default_factory=list)
     vlc_args: list[str] = field(default_factory=list)

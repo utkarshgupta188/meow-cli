@@ -14,8 +14,8 @@ from meowtv.models import (
 from meowtv.providers.base import Provider
 
 # NetMirror (Netflix Mirror) APIs
-NETMIRROR_MAIN_URL = "https://net20.cc"
-NETMIRROR_NEW_URL = "https://net51.cc"
+NETMIRROR_MAIN_URL = "https://net22.cc"
+NETMIRROR_NEW_URL = "https://net52.cc"
 
 # NetMirror cached cookie (module-level)
 _netmirror_cookie: str | None = None
@@ -399,6 +399,7 @@ class MeowVerseProvider(Provider):
         audio_lang: str | None = None
     ) -> VideoResponse | None:
         """Extract stream from NetMirror (Netflix Mirror) using bypass."""
+        from urllib.parse import quote
         import time
         
         async with httpx.AsyncClient(timeout=30) as client:
@@ -417,12 +418,59 @@ class MeowVerseProvider(Provider):
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "X-Requested-With": "XMLHttpRequest",
-                    "Referer": f"{NETMIRROR_NEW_URL}/home"
+                    "Referer": f"{NETMIRROR_MAIN_URL}/home"
                 }
                 
-                # Try net51.cc first
-                playlist_url = f"{NETMIRROR_NEW_URL}/tv/playlist.php?id={episode_id}&t={audio_lang or ''}&tm={tm}"
-                # print(f"[NetMirror] Fetching playlist: {playlist_url}")
+                # Step 1: POST to play.php to get transfer hash
+                hash_value = ""
+                try:
+                    play_res = await client.post(
+                        f"{NETMIRROR_MAIN_URL}/play.php",
+                        headers={**headers, "Content-Type": "application/x-www-form-urlencoded"},
+                        cookies=cookies,
+                        data=f"id={episode_id}"
+                    )
+                    try:
+                        play_data = play_res.json()
+                        if play_data and isinstance(play_data.get("h"), str):
+                            hash_value = play_data["h"]
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
+                
+                # Step 2: GET play.php on NEW_URL to transfer session
+                if hash_value:
+                    try:
+                        await client.get(
+                            f"{NETMIRROR_NEW_URL}/play.php?id={episode_id}&{hash_value}",
+                            headers=headers,
+                            cookies=cookies,
+                            follow_redirects=False
+                        )
+                    except Exception:
+                        pass
+                
+                # Step 3: Fetch content title (needed for playlist endpoint)
+                content_title = ""
+                try:
+                    post_res = await client.get(
+                        f"{NETMIRROR_MAIN_URL}/post.php?id={movie_id}&t={tm}",
+                        headers=headers, cookies=cookies
+                    )
+                    post_data = post_res.json()
+                    content_title = post_data.get("title", "") or post_data.get("t", "")
+                except Exception:
+                    pass
+                
+                # Step 4: Fetch playlist with hash
+                # IMPORTANT: Use /playlist.php (NOT /tv/playlist.php) and pass title in t= param
+                # /tv/playlist.php returns broken video CDN URLs with in=unknown::ni
+                hash_clean = hash_value[3:] if hash_value.startswith("in=") else hash_value
+                hash_param = f"&h={hash_clean}" if hash_clean else ""
+                title_param = quote(content_title) if content_title else ""
+                
+                playlist_url = f"{NETMIRROR_NEW_URL}/playlist.php?id={episode_id}&t={title_param}&tm={tm}{hash_param}"
                 
                 res_text = ""
                 playlist_base_url = NETMIRROR_NEW_URL
@@ -431,12 +479,11 @@ class MeowVerseProvider(Provider):
                     res = await client.get(playlist_url, headers=headers, cookies=cookies)
                     res_text = res.text
                 except Exception as e:
-                    pass # print(f"[NetMirror] Playlist fetch error: {e}")
+                    pass
                 
-                # Fallback to net20.cc if needed
+                # Fallback to MAIN_URL if needed
                 if not res_text or "Video ID not found" in res_text:
-                    # print("[NetMirror] Trying fallback to net20.cc...")
-                    fallback_url = f"{NETMIRROR_MAIN_URL}/tv/playlist.php?id={episode_id}&t={audio_lang or ''}&tm={tm}"
+                    fallback_url = f"{NETMIRROR_MAIN_URL}/playlist.php?id={episode_id}&t={title_param}&tm={tm}{hash_param}"
                     headers["Referer"] = f"{NETMIRROR_MAIN_URL}/home"
                     
                     try:
@@ -444,7 +491,6 @@ class MeowVerseProvider(Provider):
                         res_text = res.text
                         playlist_base_url = NETMIRROR_MAIN_URL
                     except Exception as e:
-                        # print(f"[NetMirror] Fallback fetch error: {e}")
                         return None
                 
                 try:
@@ -459,15 +505,17 @@ class MeowVerseProvider(Provider):
                     tracks = item.get("tracks", [])
                     
                     if sources:
-                        default_source = sources[0]
+                        # Prefer the source marked as default (usually 720p, most reliable)
+                        default_source = next(
+                            (s for s in sources if str(s.get("default", "")).lower() == "true"),
+                            sources[0]
+                        )
                         source_file = str(default_source.get("file", ""))
                         
                         if source_file.startswith("http"):
                             m3u8_url = source_file
                         else:
-                            m3u8_url = f"{playlist_base_url}{source_file.replace('/tv/', '/')}"
-                        
-                        # print(f"[NetMirror] Found stream: {m3u8_url}")
+                            m3u8_url = f"{playlist_base_url}{source_file}"
                         
                         # Process subtitles
                         subtitles = []
@@ -502,7 +550,7 @@ class MeowVerseProvider(Provider):
                             if file_url.startswith("http"):
                                 abs_url = file_url
                             else:
-                                abs_url = f"{playlist_base_url}{file_url.replace('/tv/', '/')}"
+                                abs_url = f"{playlist_base_url}{file_url}"
                             
                             qualities.append(Quality(
                                 quality=s.get("label") or "Auto",
