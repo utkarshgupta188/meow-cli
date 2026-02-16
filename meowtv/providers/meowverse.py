@@ -14,7 +14,8 @@ from meowtv.models import (
 from meowtv.providers.base import Provider
 
 # NetMirror (Netflix Mirror) APIs
-NETMIRROR_MAIN_URL = "https://net22.cc"
+# NetMirror (Netflix Mirror) APIs
+NETMIRROR_MAIN_URL = "https://net52.cc"
 NETMIRROR_NEW_URL = "https://net52.cc"
 
 # NetMirror cached cookie (module-level)
@@ -83,12 +84,12 @@ class MeowVerseProvider(Provider):
                 import time
                 tm = int(time.time())
                 
-                url = f"{NETMIRROR_MAIN_URL}/search.php?s={query}&t={tm}"
+                url = f"{NETMIRROR_NEW_URL}/search.php?s={query}&t={tm}"
                 
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "X-Requested-With": "XMLHttpRequest",
-                    "Referer": f"{NETMIRROR_MAIN_URL}/tv/home",
+                    "Referer": f"{NETMIRROR_NEW_URL}/tv/home",
                     "Cookie": f"t_hash_t={cookie}; ott=nf; hd=on; user_token=233123f803cf02184bf6c67e149cdd50"
                 }
                 
@@ -123,12 +124,12 @@ class MeowVerseProvider(Provider):
                 import time
                 tm = int(time.time())
                 
-                url = f"{NETMIRROR_MAIN_URL}/post.php?id={content_id}&t={tm}"
+                url = f"{NETMIRROR_NEW_URL}/post.php?id={content_id}&t={tm}"
                 
                 headers = {
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                     "X-Requested-With": "XMLHttpRequest",
-                    "Referer": f"{NETMIRROR_MAIN_URL}/tv/home",
+                    "Referer": f"{NETMIRROR_NEW_URL}/tv/home",
                     "Cookie": f"t_hash_t={cookie}; ott=nf; hd=on; user_token=233123f803cf02184bf6c67e149cdd50"
                 }
                 
@@ -454,6 +455,7 @@ class MeowVerseProvider(Provider):
                 # Step 3: Fetch content title (needed for playlist endpoint)
                 content_title = ""
                 try:
+                    # Try to fetch title from post.php or pass audio_lang if title fetch fails (like web app fallback)
                     post_res = await client.get(
                         f"{NETMIRROR_MAIN_URL}/post.php?id={movie_id}&t={tm}",
                         headers=headers, cookies=cookies
@@ -463,14 +465,17 @@ class MeowVerseProvider(Provider):
                 except Exception:
                     pass
                 
-                # Step 4: Fetch playlist with hash
-                # IMPORTANT: Use /playlist.php (NOT /tv/playlist.php) and pass title in t= param
-                # /tv/playlist.php returns broken video CDN URLs with in=unknown::ni
+                if not content_title and audio_lang:
+                    content_title = audio_lang
+
+                # Step 4: Fetch playlist with hash using /mobile/playlist.php
+                # Matches Web App: /mobile/playlist.php?id={episodeId}&t={title}&tm={time}
                 hash_clean = hash_value[3:] if hash_value.startswith("in=") else hash_value
-                hash_param = f"&h={hash_clean}" if hash_clean else ""
+                # hash_param = f"&h={hash_clean}" if hash_clean else "" # Web app doesn't seem to use h param for mobile endpoint?
                 title_param = quote(content_title) if content_title else ""
                 
-                playlist_url = f"{NETMIRROR_NEW_URL}/playlist.php?id={episode_id}&t={title_param}&tm={tm}{hash_param}"
+                # Use NETMIRROR_NEW_URL (net52.cc) as STREAM_URL in web app
+                playlist_url = f"{NETMIRROR_NEW_URL}/mobile/playlist.php?id={episode_id}&t={title_param}&tm={tm}"
                 
                 res_text = ""
                 playlist_base_url = NETMIRROR_NEW_URL
@@ -481,9 +486,9 @@ class MeowVerseProvider(Provider):
                 except Exception as e:
                     pass
                 
-                # Fallback to MAIN_URL if needed
+                # Fallback to MAIN_URL if needed - though Web App uses STREAM_URL (net52.cc)
                 if not res_text or "Video ID not found" in res_text:
-                    fallback_url = f"{NETMIRROR_MAIN_URL}/playlist.php?id={episode_id}&t={title_param}&tm={tm}{hash_param}"
+                    fallback_url = f"{NETMIRROR_MAIN_URL}/mobile/playlist.php?id={episode_id}&t={title_param}&tm={tm}"
                     headers["Referer"] = f"{NETMIRROR_MAIN_URL}/home"
                     
                     try:
@@ -499,7 +504,8 @@ class MeowVerseProvider(Provider):
                     # print(f"[NetMirror] Failed to parse playlist JSON: {res_text[:200]}")
                     return None
                 
-                if playlist and len(playlist) > 0:
+                # Web app: playlist is an array, take first item
+                if playlist and isinstance(playlist, list) and len(playlist) > 0:
                     item = playlist[0]
                     sources = item.get("sources", [])
                     tracks = item.get("tracks", [])
@@ -519,29 +525,34 @@ class MeowVerseProvider(Provider):
                         
                         # Process subtitles
                         subtitles = []
-                        for t in tracks:
-                            kind = str(t.get("kind", "")).lower()
-                            if "thumb" in kind:
-                                continue
-                            if "caption" in kind or "sub" in kind:
-                                label = str(t.get("label") or "Subtitles")
-                                # User requested: only load english one
-                                if "english" not in label.lower():
+                        if isinstance(tracks, list):
+                            for t in tracks:
+                                kind = str(t.get("kind", "")).lower()
+                                if "thumb" in kind:
                                     continue
+                                if "caption" in kind or "sub" in kind:
+                                    label = str(t.get("label") or t.get("name") or "Subtitles")
+                                    # User requested: only load english one logic (optional, keeping consistent with previous CLI)
+                                    # Web app filters for known languages, CLI filters for English? 
+                                    # Let's keep CLI specific logic for now or relax it.
+                                    # The previous code had: if "english" not in label.lower(): continue
+                                    # Let's keep it for now to avoid breaking existing user preference if any.
+                                    if "english" not in label.lower():
+                                        continue
+                                        
+                                    raw_file = str(t.get("file", ""))
+                                    sub_url = raw_file
+                                    if sub_url.startswith("//"):
+                                        sub_url = f"https:{sub_url}"
+                                    elif sub_url and not sub_url.startswith("http"):
+                                        sub_url = f"{playlist_base_url}{sub_url}"
                                     
-                                raw_file = str(t.get("file", ""))
-                                sub_url = raw_file
-                                if sub_url.startswith("//"):
-                                    sub_url = f"https:{sub_url}"
-                                elif sub_url and not sub_url.startswith("http"):
-                                    sub_url = f"{playlist_base_url}{sub_url}"
-                                
-                                if sub_url:
-                                    subtitles.append(Subtitle(
-                                        language=t.get("srclang") or t.get("lang") or "en",
-                                        label=label,
-                                        url=sub_url
-                                    ))
+                                    if sub_url:
+                                        subtitles.append(Subtitle(
+                                            language=t.get("srclang") or t.get("lang") or "en",
+                                            label=label,
+                                            url=sub_url
+                                        ))
                         
                         # Process qualities
                         qualities = []

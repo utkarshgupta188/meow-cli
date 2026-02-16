@@ -15,6 +15,13 @@ from meowtv.providers.base import Provider
 MAIN_URL = "https://api.kartoons.fun"
 DECRYPT_BASE = "https://kartoondecrypt.onrender.com"
 
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Referer": "https://kartoons.fun/",
+    "Origin": "https://kartoons.fun",
+    "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJtZW93dGVzdDEiLCJleHAiOjE3NzE3ODg1MTh9.izynKefr807Kv7uWgAqZVXzPim7nilpZiwu_hcqNHRg"
+}
+
 # Xon API (Firebase-based)
 XON_MAIN_URL = "http://myavens18052002.xyz/nzapis"
 XON_API_KEY = "553y845hfhdlfhjkl438943943839443943fdhdkfjfj9834lnfd98"
@@ -87,9 +94,9 @@ def _format_media_url(url: Any) -> str:
     return f"https://archive.org/download/{u}"
 
 
-async def _fetch_json(client: httpx.AsyncClient, url: str, timeout: float = 8.0) -> Any:
+async def _fetch_json(client: httpx.AsyncClient, url: str, headers: dict | None = None, timeout: float = 8.0) -> Any:
     """Fetch JSON with timeout."""
-    res = await client.get(url, timeout=timeout)
+    res = await client.get(url, headers=headers, timeout=timeout)
     res.raise_for_status()
     return res.json()
 
@@ -432,10 +439,10 @@ class MeowToonProvider(Provider):
             
             # Fetch from Kartoons
             try:
-                shows_task = _fetch_json(client, f"{MAIN_URL}/api/shows/?page=1&limit=20")
-                movies_task = _fetch_json(client, f"{MAIN_URL}/api/movies/?page=1&limit=20")
-                pop_shows_task = _fetch_json(client, f"{MAIN_URL}/api/popularity/shows?limit=15&period=day")
-                pop_movies_task = _fetch_json(client, f"{MAIN_URL}/api/popularity/movies?limit=15&period=day")
+                shows_task = _fetch_json(client, f"{MAIN_URL}/api/shows/?page=1&limit=20", headers=HEADERS)
+                movies_task = _fetch_json(client, f"{MAIN_URL}/api/movies/?page=1&limit=20", headers=HEADERS)
+                pop_shows_task = _fetch_json(client, f"{MAIN_URL}/api/popularity/shows?limit=15&period=day", headers=HEADERS)
+                pop_movies_task = _fetch_json(client, f"{MAIN_URL}/api/popularity/movies?limit=15&period=day", headers=HEADERS)
                 
                 results = await asyncio.gather(
                     shows_task, movies_task, pop_shows_task, pop_movies_task,
@@ -493,7 +500,8 @@ class MeowToonProvider(Provider):
             try:
                 data = await _fetch_json(
                     client, 
-                    f"{MAIN_URL}/api/search/suggestions?q={query}&limit=20"
+                    f"{MAIN_URL}/api/search/suggestions?q={query}&limit=20",
+                    headers=HEADERS
                 )
                 
                 for item in data.get("data", []):
@@ -542,7 +550,7 @@ class MeowToonProvider(Provider):
             api_type = "shows" if content_type == "series" else "movies"
             
             try:
-                json_data = await _fetch_json(client, f"{MAIN_URL}/api/{api_type}/{identifier}")
+                json_data = await _fetch_json(client, f"{MAIN_URL}/api/{api_type}/{identifier}", headers=HEADERS)
                 data = json_data.get("data")
                 if not data:
                     return None
@@ -577,7 +585,7 @@ class MeowToonProvider(Provider):
                             if show_slug and season_slug:
                                 try:
                                     ep_url = f"{MAIN_URL}/api/shows/{show_slug}/season/{season_slug}/all-episodes"
-                                    ep_data = await _fetch_json(client, ep_url)
+                                    ep_data = await _fetch_json(client, ep_url, headers=HEADERS)
                                     
                                     for ep in ep_data.get("data", []):
                                         ep_id = _normalize_id(ep.get("id") or ep.get("_id"))
@@ -676,7 +684,7 @@ class MeowToonProvider(Provider):
                     print(f"[MeowToon] Unknown episode ID format: {episode_id}")
                     return None
                 
-                json_data = await _fetch_json(client, url, timeout=8.0)
+                json_data = await _fetch_json(client, url, headers=HEADERS, timeout=8.0)
                 links = json_data.get("data", {}).get("links", [])
                 
                 if not links:

@@ -249,6 +249,15 @@ def select_content_interactively(provider_name: str, query: str = None, allow_se
     
     if not selected:
         return None, None, None, None
+        
+    if isinstance(selected, str):
+        # Handle case where questionary returns the title string (e.g. for Cancel if value is None/ignored)
+        if selected == "[Cancel]":
+            return None, None, None, None
+        # If it returned a string for a content item (unlikely if it worked before), we can't do much without the ID.
+        # But based on "Breaking Bad" working, real items return objects.
+        # So this string must be the Cancel choice.
+        return None, None, None, None
     
     console.print(f"\n[dim]Loading {selected.title}...[/]")
     details = run_async(prov.fetch_details(selected.id))
@@ -280,7 +289,7 @@ def select_content_interactively(provider_name: str, query: str = None, allow_se
             season_choices.append(questionary.Choice(title="[Cancel]", value=None))
             
             selected_season = questionary.select("Select season:", choices=season_choices).ask()
-            if not selected_season:
+            if not selected_season or (isinstance(selected_season, str) and selected_season == "[Cancel]"):
                 return None, None, None, None
             season_episodes = seasons[selected_season]
         else:
@@ -310,12 +319,16 @@ def select_content_interactively(provider_name: str, query: str = None, allow_se
         if not selected_ep:
             return None, None, None, None
         
-        if isinstance(selected_ep, str) and selected_ep.startswith("ALL_s"): # Handle lowercase too just in case
-             ep_id = selected_ep
-             ep_title = f"Season {selected_season}"
-        elif isinstance(selected_ep, str) and selected_ep.startswith("ALL_S"):
-             ep_id = selected_ep
-             ep_title = f"Season {selected_season}"
+        if isinstance(selected_ep, str):
+             if selected_ep == "[Cancel]":
+                 return None, None, None, None
+             
+             if selected_ep.startswith("ALL_s") or selected_ep.startswith("ALL_S"):
+                 ep_id = selected_ep
+                 ep_title = f"Season {selected_season}"
+             else:
+                 # Unexpected string?
+                 return None, None, None, None
         else:
             ep_id = selected_ep.id
             source_id = selected_ep.source_movie_id or selected.id
@@ -377,7 +390,7 @@ def search(query: str, provider: Optional[str], interactive: bool):
             choices=choices,
         ).ask()
         
-        if not selected or not hasattr(selected, 'id'):
+        if not selected or not hasattr(selected, 'id') or (isinstance(selected, str) and selected == "[Cancel]"):
             return
         
         console.print(f"\n[dim]Loading {selected.title}...[/]")
@@ -419,7 +432,7 @@ def search(query: str, provider: Optional[str], interactive: bool):
                     choices=season_choices,
                 ).ask()
                 
-                if not selected_season:
+                if not selected_season or (isinstance(selected_season, str) and selected_season == "[Cancel]"):
                     return
                 
                 season_episodes = seasons[selected_season]
@@ -442,8 +455,12 @@ def search(query: str, provider: Optional[str], interactive: bool):
                 choices=ep_choices,
             ).ask()
             
-            if not selected_ep:
+            if not selected_ep or (isinstance(selected_ep, str) and selected_ep == "[Cancel]"):
                 return
+            
+            # search command doesn't use ALL_S logic yet, but good to be safe if copied
+            if isinstance(selected_ep, str):
+                 return # Should not happen unless Cancel or weird value
             
             ep_id = selected_ep.id
             ep_title = f"{details.title} - {selected_ep.title or f'S{selected_ep.season}E{selected_ep.number}'}"
@@ -549,9 +566,10 @@ def play_cmd(query_or_id: Optional[str], episode: Optional[str], provider: Optio
     
     if not query_or_id:
         # No arg -> interactive search
-        selected, source_id, sel_ep_id, sel_title = select_content_interactively(provider_name)
-        if not selected:
+        result = select_content_interactively(provider_name)
+        if not result or not result[0]:
             return
+        selected, source_id, sel_ep_id, sel_title = result
         content_id = source_id or selected.id
         ep_id = sel_ep_id
         title = sel_title
@@ -560,9 +578,10 @@ def play_cmd(query_or_id: Optional[str], episode: Optional[str], provider: Optio
         content_id = query_or_id
     else:
         # Search query -> interactive
-        selected, source_id, sel_ep_id, sel_title = select_content_interactively(provider_name, query=query_or_id)
-        if not selected:
+        result = select_content_interactively(provider_name, query=query_or_id)
+        if not result or not result[0]:
             return
+        selected, source_id, sel_ep_id, sel_title = result
         content_id = source_id or selected.id
         ep_id = sel_ep_id
         title = sel_title
@@ -654,9 +673,10 @@ def download_cmd(query_or_id: Optional[str], episode: Optional[str], season: Opt
     
     # Case 1: No arg provided -> Interactive Search
     if not query_or_id:
-        selected, source_id, sel_ep_id, sel_ep_title = select_content_interactively(provider_name, allow_season_download=True)
-        if not selected:
+        result = select_content_interactively(provider_name, allow_season_download=True)
+        if not result or not result[0]:
             return
+        selected, source_id, sel_ep_id, sel_ep_title = result
         content_id = source_id or selected.id
         ep_id = sel_ep_id
         title = sel_ep_title
@@ -668,9 +688,10 @@ def download_cmd(query_or_id: Optional[str], episode: Optional[str], season: Opt
         
     # Case 3: Query provided -> Interactive Search
     else:
-        selected, source_id, sel_ep_id, sel_ep_title = select_content_interactively(provider_name, query=query_or_id, allow_season_download=True)
-        if not selected:
+        result = select_content_interactively(provider_name, query=query_or_id, allow_season_download=True)
+        if not result or not result[0]:
             return
+        selected, source_id, sel_ep_id, sel_ep_title = result
         content_id = source_id or selected.id
         ep_id = sel_ep_id
         title = sel_ep_title
