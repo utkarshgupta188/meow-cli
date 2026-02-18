@@ -14,13 +14,41 @@ from meowtv.providers.base import Provider
 # Kartoons API
 MAIN_URL = "https://api.kartoons.fun"
 DECRYPT_BASE = "https://kartoondecrypt.onrender.com"
+TOKEN_URL = "https://kartoon-api.vercel.app/api/key"
+
+_kartoons_token: str | None = None
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Referer": "https://kartoons.fun/",
     "Origin": "https://kartoons.fun",
-    "Authorization": "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJtZW93dGVzdDEiLCJleHAiOjE3NzE3ODg1MTh9.izynKefr807Kv7uWgAqZVXzPim7nilpZiwu_hcqNHRg"
 }
+
+
+async def _get_kartoons_token(client: httpx.AsyncClient) -> str | None:
+    """Fetch Kartoons bearer token from API."""
+    global _kartoons_token
+    if _kartoons_token:
+        return _kartoons_token
+
+    try:
+        res = await client.get(TOKEN_URL, timeout=10.0)
+        if res.status_code == 200:
+            data = res.json()
+            _kartoons_token = data.get("apiKey")
+            return _kartoons_token
+    except Exception as e:
+        print(f"[MeowToon] Failed to fetch Kartoons token: {e}")
+    return None
+
+
+async def _get_kartoons_headers(client: httpx.AsyncClient) -> dict:
+    """Get headers with the dynamic Kartoons token."""
+    token = await _get_kartoons_token(client)
+    headers = HEADERS.copy()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 # Xon API (Firebase-based)
 XON_MAIN_URL = "http://myavens18052002.xyz/nzapis"
@@ -439,10 +467,11 @@ class MeowToonProvider(Provider):
             
             # Fetch from Kartoons
             try:
-                shows_task = _fetch_json(client, f"{MAIN_URL}/api/shows/?page=1&limit=20", headers=HEADERS)
-                movies_task = _fetch_json(client, f"{MAIN_URL}/api/movies/?page=1&limit=20", headers=HEADERS)
-                pop_shows_task = _fetch_json(client, f"{MAIN_URL}/api/popularity/shows?limit=15&period=day", headers=HEADERS)
-                pop_movies_task = _fetch_json(client, f"{MAIN_URL}/api/popularity/movies?limit=15&period=day", headers=HEADERS)
+                k_headers = await _get_kartoons_headers(client)
+                shows_task = _fetch_json(client, f"{MAIN_URL}/api/shows/?page=1&limit=20", headers=k_headers)
+                movies_task = _fetch_json(client, f"{MAIN_URL}/api/movies/?page=1&limit=20", headers=k_headers)
+                pop_shows_task = _fetch_json(client, f"{MAIN_URL}/api/popularity/shows?limit=15&period=day", headers=k_headers)
+                pop_movies_task = _fetch_json(client, f"{MAIN_URL}/api/popularity/movies?limit=15&period=day", headers=k_headers)
                 
                 results = await asyncio.gather(
                     shows_task, movies_task, pop_shows_task, pop_movies_task,
@@ -498,10 +527,11 @@ class MeowToonProvider(Provider):
             
             # Search Kartoons
             try:
+                k_headers = await _get_kartoons_headers(client)
                 data = await _fetch_json(
                     client, 
                     f"{MAIN_URL}/api/search/suggestions?q={query}&limit=20",
-                    headers=HEADERS
+                    headers=k_headers
                 )
                 
                 for item in data.get("data", []):
@@ -550,7 +580,8 @@ class MeowToonProvider(Provider):
             api_type = "shows" if content_type == "series" else "movies"
             
             try:
-                json_data = await _fetch_json(client, f"{MAIN_URL}/api/{api_type}/{identifier}", headers=HEADERS)
+                k_headers = await _get_kartoons_headers(client)
+                json_data = await _fetch_json(client, f"{MAIN_URL}/api/{api_type}/{identifier}", headers=k_headers)
                 data = json_data.get("data")
                 if not data:
                     return None
@@ -585,7 +616,7 @@ class MeowToonProvider(Provider):
                             if show_slug and season_slug:
                                 try:
                                     ep_url = f"{MAIN_URL}/api/shows/{show_slug}/season/{season_slug}/all-episodes"
-                                    ep_data = await _fetch_json(client, ep_url, headers=HEADERS)
+                                    ep_data = await _fetch_json(client, ep_url, headers=k_headers)
                                     
                                     for ep in ep_data.get("data", []):
                                         ep_id = _normalize_id(ep.get("id") or ep.get("_id"))
@@ -684,7 +715,8 @@ class MeowToonProvider(Provider):
                     print(f"[MeowToon] Unknown episode ID format: {episode_id}")
                     return None
                 
-                json_data = await _fetch_json(client, url, headers=HEADERS, timeout=8.0)
+                k_headers = await _get_kartoons_headers(client)
+                json_data = await _fetch_json(client, url, headers=k_headers, timeout=8.0)
                 links = json_data.get("data", {}).get("links", [])
                 
                 if not links:
