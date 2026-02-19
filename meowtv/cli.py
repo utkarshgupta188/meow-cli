@@ -177,8 +177,6 @@ def run_async(coro):
 
 # ===== CLI COMMANDS =====
 
-from meowtv.providers.proxy import set_proxy_url
-
 @click.group(invoke_without_command=True)
 @click.option("--version", "-v", is_flag=True, help="Show version")
 @click.pass_context
@@ -190,7 +188,6 @@ def main(ctx, version):
     
     # Initialize proxy from config
     config = get_config()
-    set_proxy_url(config.proxy_url)
     
     # Check for updates (runs once per session)
     check_for_updates()

@@ -13,8 +13,6 @@ from meowtv.models import (
     Quality, Season, Subtitle, Track, VideoResponse
 )
 from meowtv.providers.base import Provider
-from meowtv.providers import proxy as proxy_utils
-from meowtv.providers.proxy import get_hls_proxy_url
 
 MAIN_URL = "https://api.hlowb.com"
 
@@ -367,31 +365,21 @@ class MeowTVProvider(Provider):
                         data = _parse_json_preserve_bigint(decrypted).get("data", {})
                         video_url = data.get("videoUrl")
                         
-                        if video_url:
-                            # Apply proxy if configured
-                            if proxy_utils.PROXY_WORKER_URL:
-                                params = {
-                                    "ua": HEADERS["User-Agent"],
-                                    # Add other headers if needed, e.g. Referer
-                                }
-                                # MeowTV streams are usually simple HLS without complex cookies
-                                video_url = get_hls_proxy_url(video_url, params)
-
-                            quality_label = {3: "1080p", 2: "720p", 1: "480p"}.get(resolution, f"{resolution}p")
-                            collected_qualities.append(Quality(quality=quality_label, url=video_url))
-                            
-                            if not best_video_url:
-                                best_video_url = video_url
-                                for s in data.get("subtitles", []):
-                                    lang = s.get("abbreviate") or s.get("title") or "Unknown"
-                                    sub_url = s.get("url", "")
-                                    label = s.get("title") or lang or "Subtitles"
-                                    if sub_url:
-                                        best_subtitles.append(Subtitle(
-                                            language=lang,
-                                            label=label,
-                                            url=sub_url
-                                        ))
+                        quality_label = {3: "1080p", 2: "720p", 1: "480p"}.get(resolution, f"{resolution}p")
+                        collected_qualities.append(Quality(quality=quality_label, url=video_url))
+                        
+                        if not best_video_url:
+                            best_video_url = video_url
+                            for s in data.get("subtitles", []):
+                                lang = s.get("abbreviate") or s.get("title") or "Unknown"
+                                sub_url = s.get("url", "")
+                                label = s.get("title") or lang or "Subtitles"
+                                if sub_url:
+                                    best_subtitles.append(Subtitle(
+                                        language=lang,
+                                        label=label,
+                                        url=sub_url
+                                    ))
                     except Exception as e:
                         print(f"[MeowTV] Stream fetch error: {e}")
                         continue
