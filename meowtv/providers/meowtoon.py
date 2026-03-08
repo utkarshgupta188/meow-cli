@@ -12,7 +12,7 @@ from meowtv.models import (
 from meowtv.providers.base import Provider
 
 # Kartoons API
-MAIN_URL = "https://api.kartoons.fun"
+MAIN_URL = "https://api.kartoons.me"
 DECRYPT_BASE = "https://kartoondecrypt.onrender.com"
 TOKEN_URL = "https://kartoon-api.vercel.app/api/key"
 
@@ -20,8 +20,8 @@ _kartoons_token: str | None = None
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Referer": "https://kartoons.fun/",
-    "Origin": "https://kartoons.fun",
+    "Referer": "https://kartoons.me/",
+    "Origin": "https://kartoons.me",
 }
 
 
