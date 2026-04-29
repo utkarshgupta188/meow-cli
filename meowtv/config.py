@@ -34,6 +34,7 @@ class Config:
     preferred_quality: str = "1080p"
     mpv_args: list[str] = field(default_factory=list)
     vlc_args: list[str] = field(default_factory=list)
+    proxy_url: str | None = None
 
 
 _config: Config | None = None
@@ -52,6 +53,9 @@ def load_config() -> Config:
             with open(config_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
             _config = Config(**{k: v for k, v in data.items() if hasattr(Config, k)})
+            # Migration: If default_provider is meowverse, switch to meowtv
+            if _config.default_provider == "meowverse":
+                _config.default_provider = "meowtv"
         except Exception as e:
             print(f"[Config] Failed to load config: {e}")
             _config = Config()

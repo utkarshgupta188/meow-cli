@@ -1,6 +1,7 @@
 """MeowTV CLI - Main command-line interface."""
 
 import asyncio
+import os
 from pathlib import Path
 from typing import Optional
 
@@ -22,6 +23,16 @@ from meowtv.downloader import download, is_download_available
 console = Console()
 
 
+# ===== PROXY HELPERS =====
+
+def set_proxy_url(proxy_url: Optional[str]):
+    """
+    No longer sets global environment variables to avoid breaking 
+    direct API requests. Providers now handle proxying individually.
+    """
+    pass
+
+
 # ===== PROVIDER HELPERS =====
 
 def get_provider_instance(name: str):
@@ -32,7 +43,7 @@ def get_provider_instance(name: str):
 
 def get_all_provider_names() -> list[str]:
     """Get all available provider names."""
-    return ["meowverse", "meowtv", "meowtoon"]
+    return ["meowtv", "meowtoon"]
 
 
 # ===== UPDATE CHECKER =====
@@ -188,6 +199,8 @@ def main(ctx, version):
     
     # Initialize proxy from config
     config = get_config()
+    if config.proxy_url:
+        set_proxy_url(config.proxy_url)
     
     # Check for updates (runs once per session)
     check_for_updates()
@@ -228,6 +241,8 @@ def select_content_interactively(provider_name: str, query: str = None, allow_se
     if not results:
         console.print("[yellow]No results found[/]")
         return None, None, None, None
+    
+    console.print(f"[dim]Found {len(results)} results[/]")
     
     # 2. Select Content
     choices = [
@@ -341,7 +356,7 @@ def select_content_interactively(provider_name: str, query: str = None, allow_se
 
 @main.command()
 @click.argument("query")
-@click.option("--provider", "-p", default=None, help="Provider to search (meowverse, meowtv, meowtoon)")
+@click.option("--provider", "-p", default=None, help="Provider to search (meowtv, meowtoon)")
 @click.option("--interactive", "-i", is_flag=True, default=True, help="Enable interactive selection")
 def search(query: str, provider: Optional[str], interactive: bool):
     """Search for content and optionally select to play."""
@@ -365,6 +380,8 @@ def search(query: str, provider: Optional[str], interactive: bool):
     if not results:
         console.print("[yellow]No results found[/]")
         return
+    
+    console.print(f"[dim]Found {len(results)} results[/]")
     
     # Show results table
     # Show results table
@@ -472,9 +489,6 @@ def search(query: str, provider: Optional[str], interactive: bool):
         # Fetch stream
         console.print(f"[dim]Loading stream...[/]")
         
-        # Fetch stream
-        console.print(f"[dim]Loading stream...[/]")
-        
         async def get_stream():
             # Resolving source_id locally for duplicates search logic
             # We need to find the episode in details to get source_movie_id if we didn't use the helper
@@ -491,7 +505,7 @@ def search(query: str, provider: Optional[str], interactive: bool):
         
         if stream:
             console.print(f"[green]▶ Playing: {ep_title}[/]")
-            run_async(play(stream, title=ep_title, suppress_output=("meowverse" not in prov.name.lower())))
+            run_async(play(stream, title=ep_title, suppress_output=("meowtv" in prov.name.lower())))
         else:
             console.print("[red]Failed to get stream[/]")
     else:
@@ -639,7 +653,7 @@ def play_cmd(query_or_id: Optional[str], episode: Optional[str], provider: Optio
     console.print(f"[green]▶ Playing: {result_title}[/]")
     console.print(f"[dim]Player: {player} | Quality: {quality or 'auto'}[/]")
     
-    process = run_async(play(stream, player=player, title=result_title, quality=quality, suppress_output=("meowverse" not in prov.name.lower())))
+    process = run_async(play(stream, player=player, title=result_title, quality=quality, suppress_output=("meowtv" in prov.name.lower())))
     
     if process:
         pass
@@ -1054,7 +1068,7 @@ def interactive_mode():
                         stream = run_async(prov.fetch_stream(args, ep_id))
                         if stream:
                             console.print(f"[green]▶ Playing: {details.title}[/]")
-                            run_async(play(stream, title=details.title, suppress_output=("meowverse" not in prov.name.lower())))
+                            run_async(play(stream, title=details.title, suppress_output=("meowtv" in prov.name.lower())))
                         else:
                             console.print("[red]Failed to load stream[/]")
                     else:

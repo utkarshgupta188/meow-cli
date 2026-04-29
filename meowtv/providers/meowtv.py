@@ -3,7 +3,7 @@
 import json
 import os
 import re
-from typing import Any
+from typing import Any, Optional
 
 import httpx
 
@@ -32,73 +32,126 @@ def _parse_json_preserve_bigint(text: str) -> Any:
     return json.loads(safe)
 
 
-async def _get_security_key(client: httpx.AsyncClient, retries: int = 3) -> tuple[str | None, str | None]:
-    """Fetch security key from Castle API."""
-    url = f"{MAIN_URL}/v0.1/system/getSecurityKey/1?channel=IndiaA&clientType=1&lang=en-US"
-    
-    for attempt in range(1, retries + 1):
-        try:
-            res = await client.get(url, headers=HEADERS)
-            cookie = res.headers.get("set-cookie", "")
-            text = res.text
-            
-            try:
-                data = json.loads(text)
-                if data.get("code") == 200 and data.get("data"):
-                    return data["data"], cookie
-            except json.JSONDecodeError:
-                print(f"[MeowTV] getSecurityKey parse error (attempt {attempt})")
-                
-        except Exception as e:
-            print(f"[MeowTV] getSecurityKey failed (attempt {attempt}): {e}")
-    
-    return None, None
-
-
-async def _fetch_details_with_key(client: httpx.AsyncClient, content_id: str, key: str) -> Any | None:
-    """Fetch details using security key."""
-    url = f"{MAIN_URL}/film-api/v1.9.9/movie?channel=IndiaA&clientType=1&lang=en-US&movieId={content_id}&packageName=com.external.castle"
-    
-    try:
-        res = await client.get(url)
-        decrypted = decrypt_data(res.text, key)
-        if not decrypted:
-            return None
-        return _parse_json_preserve_bigint(decrypted).get("data")
-    except Exception:
-        return None
-
-
 class MeowTVProvider(Provider):
     """MeowTV (Castle) content provider."""
+
+    def __init__(self, proxy_url: Optional[str] = None):
+        super().__init__(proxy_url)
+        self._security_key: Optional[str] = None
+        self._cookie: Optional[str] = None
+        self._proxy_failed = False  # Track if proxy is consistently failing
 
     @property
     def name(self) -> str:
         return "MeowTV"
 
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Create a client. Environment variables like HTTP_PROXY are ignored 
+        to ensure we control the proxy behavior via self.proxy_url."""
+        return httpx.AsyncClient(timeout=30, trust_env=False)
+
+    async def _get_security_key(self, client: httpx.AsyncClient, retries: int = 3) -> tuple[str | None, str | None]:
+        """Fetch security key with proxy fallback logic."""
+        base_url = f"{MAIN_URL}/v0.1/system/getSecurityKey/1?channel=IndiaA&clientType=1&lang=en-US"
+        
+        # Strategies: 
+        # 1. Proxied (if configured)
+        # 2. Local/Direct
+        strategies = []
+        if self.proxy_url and not self._proxy_failed:
+            strategies.append(("proxied", self.get_proxied_url(base_url)))
+        strategies.append(("direct", base_url))
+
+        for strategy_name, url in strategies:
+            for attempt in range(1, retries + 1):
+                try:
+                    res = await client.get(url, headers=HEADERS)
+                    
+                    if res.status_code == 400 and strategy_name == "proxied":
+                        # If proxy returns 400, it's likely the worker issue. Skip to next strategy.
+                        self._proxy_failed = True
+                        break
+                        
+                    cookie = res.headers.get("set-cookie", "")
+                    text = res.text
+                    
+                    try:
+                        data = json.loads(text)
+                        if data.get("code") == 200 and data.get("data"):
+                            return data["data"], cookie
+                    except json.JSONDecodeError:
+                        pass
+                except Exception:
+                    if attempt == retries:
+                        continue
+        
+        return None, None
+
+    async def _fetch_details_with_key(self, client: httpx.AsyncClient, content_id: str, key: str) -> Any | None:
+        """Fetch details using security key."""
+        raw_url = f"{MAIN_URL}/film-api/v1.9.9/movie?channel=IndiaA&clientType=1&lang=en-US&movieId={content_id}&packageName=com.external.castle"
+        url = self.get_proxied_url(raw_url)
+        
+        try:
+            res = await client.get(url)
+            decrypted = decrypt_data(res.text, key)
+            if not decrypted:
+                return None
+            return _parse_json_preserve_bigint(decrypted).get("data")
+        except Exception:
+            return None
+
+    async def _request(self, client: httpx.AsyncClient, method: str, raw_url: str, key: Optional[str] = None, **kwargs) -> Any:
+        """Perform request with proxy fallback."""
+        strategies = []
+        if self.proxy_url and not self._proxy_failed:
+            strategies.append(("proxied", self.get_proxied_url(raw_url)))
+        strategies.append(("direct", raw_url))
+
+        last_exception = None
+        for strategy_name, url in strategies:
+            try:
+                if method.upper() == "POST":
+                    res = await client.post(url, **kwargs)
+                else:
+                    res = await client.get(url, **kwargs)
+                
+                if res.status_code == 400 and strategy_name == "proxied":
+                    continue # Try direct
+                
+                text = res.text
+                if not key:
+                    return text
+                
+                decrypted = decrypt_data(text, key)
+                if decrypted:
+                    return decrypted
+                
+                # If decryption failed but we are on proxied, try direct
+                if strategy_name == "proxied":
+                    self._proxy_failed = True
+                    continue
+                
+            except Exception as e:
+                last_exception = e
+                if strategy_name == "proxied":
+                    continue
+        
+        if last_exception:
+            raise last_exception
+        return None
+
     async def fetch_home(self, page: int = 1) -> list[HomeRow]:
         """Fetch home page content."""
-        async with httpx.AsyncClient(timeout=30) as client:
-            key, _ = await _get_security_key(client)
+        async with await self._get_client() as client:
+            key, _ = await self._get_security_key(client)
             if not key:
                 return []
             
-            url = f"{MAIN_URL}/film-api/v0.1/category/home?channel=IndiaA&clientType=1&lang=en-US&locationId=1001&mode=1&packageName=com.external.castle&page={page}&size=17"
+            raw_url = f"{MAIN_URL}/film-api/v0.1/category/home?channel=IndiaA&clientType=1&lang=en-US&locationId=1001&mode=1&packageName=com.external.castle&page={page}&size=17"
             
             try:
-                res = await client.get(url)
-                text = res.text
-                
-                # Try to extract encrypted data
-                encrypted_data = text
-                try:
-                    parsed = json.loads(text)
-                    if parsed.get("data"):
-                        encrypted_data = parsed["data"]
-                except json.JSONDecodeError:
-                    pass
-                
-                decrypted = decrypt_data(encrypted_data, key)
+                decrypted = await self._request(client, "GET", raw_url, key=key)
                 if not decrypted:
                     return []
                 
@@ -131,16 +184,15 @@ class MeowTVProvider(Provider):
 
     async def search(self, query: str) -> list[ContentItem]:
         """Search for content."""
-        async with httpx.AsyncClient(timeout=30) as client:
-            key, _ = await _get_security_key(client)
+        async with await self._get_client() as client:
+            key, _ = await self._get_security_key(client)
             if not key:
                 return []
             
-            url = f"{MAIN_URL}/film-api/v1.1.0/movie/searchByKeyword?channel=IndiaA&clientType=1&keyword={query}&lang=en-US&mode=1&packageName=com.external.castle&page=1&size=30"
+            raw_url = f"{MAIN_URL}/film-api/v1.1.0/movie/searchByKeyword?channel=IndiaA&clientType=1&keyword={query}&lang=en-US&mode=1&packageName=com.external.castle&page=1&size=30"
             
             try:
-                res = await client.get(url)
-                decrypted = decrypt_data(res.text, key)
+                decrypted = await self._request(client, "GET", raw_url, key=key)
                 if not decrypted:
                     return []
                 
@@ -166,16 +218,15 @@ class MeowTVProvider(Provider):
 
     async def fetch_details(self, content_id: str, include_episodes: bool = True) -> MovieDetails | None:
         """Fetch content details."""
-        async with httpx.AsyncClient(timeout=30) as client:
-            key, _ = await _get_security_key(client)
+        async with await self._get_client() as client:
+            key, _ = await self._get_security_key(client)
             if not key:
                 return None
             
-            url = f"{MAIN_URL}/film-api/v1.9.9/movie?channel=IndiaA&clientType=1&lang=en-US&movieId={content_id}&packageName=com.external.castle"
+            raw_url = f"{MAIN_URL}/film-api/v1.9.9/movie?channel=IndiaA&clientType=1&lang=en-US&movieId={content_id}&packageName=com.external.castle"
             
             try:
-                res = await client.get(url)
-                decrypted = decrypt_data(res.text, key)
+                decrypted = await self._request(client, "GET", raw_url, key=key)
                 if not decrypted:
                     return None
                 
@@ -192,7 +243,12 @@ class MeowTVProvider(Provider):
                             if not movie_id:
                                 continue
                             
-                            season_data = await _fetch_details_with_key(client, str(movie_id), key)
+                            season_raw_url = f"{MAIN_URL}/film-api/v1.9.9/movie?channel=IndiaA&clientType=1&lang=en-US&movieId={movie_id}&packageName=com.external.castle"
+                            season_decrypted = await self._request(client, "GET", season_raw_url, key=key)
+                            if not season_decrypted:
+                                continue
+                            
+                            season_data = _parse_json_preserve_bigint(season_decrypted).get("data", {})
                             if not season_data:
                                 continue
                             
@@ -284,13 +340,16 @@ class MeowTVProvider(Provider):
         language_id: str | int | None = None
     ) -> VideoResponse | None:
         """Fetch stream URL for playback."""
-        async with httpx.AsyncClient(timeout=60) as client:
-            key, cookie = await _get_security_key(client)
+        async with await self._get_client() as client:
+            key, cookie = await self._get_security_key(client)
             if not key:
                 return None
             
             # Fetch details to get episode tracks
-            details = await _fetch_details_with_key(client, movie_id, key)
+            raw_details_url = f"{MAIN_URL}/film-api/v1.9.9/movie?channel=IndiaA&clientType=1&lang=en-US&movieId={movie_id}&packageName=com.external.castle"
+            decrypted_details = await self._request(client, "GET", raw_details_url, key=key)
+            
+            details = _parse_json_preserve_bigint(decrypted_details).get("data", {}) if decrypted_details else {}
             episodes = details.get("episodes", []) if details else []
             
             # Find target episode
@@ -328,7 +387,7 @@ class MeowTVProvider(Provider):
             
             for track in track_plan:
                 for resolution in resolutions:
-                    url = f"{MAIN_URL}/film-api/v2.0.1/movie/getVideo2?clientType=1&packageName=com.external.castle&channel=IndiaA&lang=en-US"
+                    raw_url = f"{MAIN_URL}/film-api/v2.0.1/movie/getVideo2?clientType=1&packageName=com.external.castle&channel=IndiaA&lang=en-US"
                     
                     body = {
                         "mode": "1",
@@ -348,8 +407,11 @@ class MeowTVProvider(Provider):
                         body["languageId"] = str(track["languageId"])
                     
                     try:
-                        res = await client.post(
-                            url,
+                        decrypted = await self._request(
+                            client, 
+                            "POST", 
+                            raw_url, 
+                            key=key,
                             headers={
                                 **HEADERS,
                                 "Content-Type": "application/json; charset=utf-8",
@@ -358,7 +420,6 @@ class MeowTVProvider(Provider):
                             json=body
                         )
                         
-                        decrypted = decrypt_data(res.text, key)
                         if not decrypted:
                             continue
                         

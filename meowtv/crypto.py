@@ -40,6 +40,5 @@ def decrypt_data(encrypted_b64: str, api_key_b64: str) -> str | None:
         decrypted = decrypted[:-padding_len]
         
         return decrypted.decode("utf-8")
-    except Exception as e:
-        print(f"[Crypto] Decryption failed: {e}")
+    except Exception:
         return None

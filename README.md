@@ -34,7 +34,6 @@
 
 | Provider | Content Type | Speciality |
 | :--- | :--- | :--- |
-| **MeowVerse** | Movies & TV | Global content, multi-audio, high speed |
 | **MeowTV** | Movies & TV | Premium Asian & Global library |
 | **MeowToon** | Anime & Kids | Extensive cartoon & anime collection |
 
@@ -109,12 +108,13 @@ meowtv download <content_id> -o ~/Videos
 
 ---
 
-## 🏎️ Performance Optimizations (v1.0.8+)
+## 🏎️ Performance & Stability (v1.2.0+)
 
-We've recently overhauled the engine for maximum speed:
+We've recently overhauled the engine for maximum reliability:
+- **Intelligent Proxy Fallback**: Automatically detects worker failures and switches to direct connections for zero downtime.
 - **Parallel Fetching**: Fetches all seasons/episodes simultaneously using `asyncio.gather`.
-- **HLS Variant Filtering**: Limits stream probing to the top 3 qualities to prevent "14-minute" initial lags.
-- **Aggressive Buffering**: Optimized MPV arguments (`--cache-secs=2`) for near-instant playback.
+- **HLS Variant Filtering**: Limits stream probing to the top 3 qualities to prevent long initial lags.
+- **Aggressive Buffering**: Optimized MPV arguments for near-instant playback.
 
 ---
 

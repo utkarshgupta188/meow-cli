@@ -6,7 +6,6 @@ from meowtv.providers.meowtoon import MeowToonProvider
 
 __all__ = [
     "Provider",
-    "MeowVerseProvider",
     "MeowTVProvider",
     "MeowToonProvider",
 ]
@@ -17,7 +16,11 @@ PROVIDERS: dict[str, Provider] = {}
 
 def get_provider(name: str) -> Provider | None:
     """Get a provider by name."""
-    return PROVIDERS.get(name.lower())
+    from meowtv.config import get_config
+    prov = PROVIDERS.get(name.lower())
+    if prov:
+        prov.proxy_url = get_config().proxy_url
+    return prov
 
 
 def get_all_providers() -> list[Provider]:
@@ -30,10 +33,10 @@ def register_providers():
     global PROVIDERS
     # Delay import of MeowVerseProvider to avoid circular dependency if needed, 
     # but strictly we import it at top. MeowVerseProvider will be the new CineStream one.
-    from meowtv.providers.meowverse import MeowVerseProvider
+    # from meowtv.providers.meowverse import MeowVerseProvider
     
     PROVIDERS = {
-        "meowverse": MeowVerseProvider(),
+        # "meowverse": MeowVerseProvider(),
         "meowtv": MeowTVProvider(),
         "meowtoon": MeowToonProvider(),
     }
