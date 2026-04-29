@@ -14,9 +14,8 @@ from meowtv.models import (
 from meowtv.providers.base import Provider
 
 # NetMirror (Netflix Mirror) APIs
-# NetMirror (Netflix Mirror) APIs
 NETMIRROR_MAIN_URL = "https://net52.cc"
-NETMIRROR_NEW_URL = "https://net52.cc"
+NETMIRROR_API_URL = "https://net22.cc"
 
 # NetMirror cached cookie (module-level)
 _netmirror_cookie: str | None = None
@@ -84,12 +83,12 @@ class MeowVerseProvider(Provider):
                 import time
                 tm = int(time.time())
                 
-                url = f"{NETMIRROR_NEW_URL}/search.php?s={query}&t={tm}"
+                url = f"{NETMIRROR_MAIN_URL}/search.php?s={query}&t={tm}"
                 
                 headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "User-Agent": "Mozilla/5.0 (Linux; Android 12; RMX2117 Build/SP1A.210812.016; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/147.0.7727.55 Mobile Safari/537.36 /OS.Gatu v3.0",
                     "X-Requested-With": "XMLHttpRequest",
-                    "Referer": f"{NETMIRROR_NEW_URL}/tv/home",
+                    "Referer": f"{NETMIRROR_MAIN_URL}/tv/home",
                     "Cookie": f"t_hash_t={cookie}; ott=nf; hd=on; user_token=233123f803cf02184bf6c67e149cdd50"
                 }
                 
@@ -124,12 +123,12 @@ class MeowVerseProvider(Provider):
                 import time
                 tm = int(time.time())
                 
-                url = f"{NETMIRROR_NEW_URL}/post.php?id={content_id}&t={tm}"
+                url = f"{NETMIRROR_MAIN_URL}/post.php?id={content_id}&t={tm}"
                 
                 headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "User-Agent": "Mozilla/5.0 (Linux; Android 12; RMX2117 Build/SP1A.210812.016; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/147.0.7727.55 Mobile Safari/537.36 /OS.Gatu v3.0",
                     "X-Requested-With": "XMLHttpRequest",
-                    "Referer": f"{NETMIRROR_NEW_URL}/tv/home",
+                    "Referer": f"{NETMIRROR_MAIN_URL}/tv/home",
                     "Cookie": f"t_hash_t={cookie}; ott=nf; hd=on; user_token=233123f803cf02184bf6c67e149cdd50"
                 }
                 
@@ -352,46 +351,86 @@ class MeowVerseProvider(Provider):
         return None
 
     async def _netmirror_bypass(self) -> str:
-        """Bypass to get t_hash_t cookie from NetMirror."""
+        """Bypass to get t_hash_t cookie from NetMirror using the new multi-step process."""
         global _netmirror_cookie, _netmirror_cache_time
         import time
+        import asyncio
         
-        # Return cached cookie if valid
+        # Return cached cookie if valid (15 hours)
         current_time = time.time() * 1000  # Convert to ms
         if _netmirror_cookie and (current_time - _netmirror_cache_time) < _NETMIRROR_CACHE_DURATION:
             return _netmirror_cookie
         
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "X-Requested-With": "XMLHttpRequest",
-        }
+        mobile_ua = "Mozilla/5.0 (Linux; Android 12; RMX2117 Build/SP1A.210812.016; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/147.0.7727.55 Mobile Safari/537.36 /OS.Gatu v3.0"
         
         async with httpx.AsyncClient(timeout=30) as client:
-            retries = 0
-            max_retries = 10
-            
-            # print("[NetMirror] Starting bypass...")
-            
-            while retries < max_retries:
-                try:
-                    res = await client.post(f"{NETMIRROR_MAIN_URL}/tv/p.php", headers=headers)
-                    verify_check = res.text
-                    
-                    if '"r":"n"' in verify_check:
-                        # Extract t_hash_t from cookies
-                        cookies = res.cookies
-                        if "t_hash_t" in cookies:
-                            _netmirror_cookie = cookies["t_hash_t"]
-                            _netmirror_cache_time = current_time
-                            # print("[NetMirror] Bypass successful!")
-                            return _netmirror_cookie
-                except Exception as e:
-                    pass # print(f"[NetMirror] Bypass attempt error: {e}")
+            try:
+                # 1. GET mobile home to get addhash
+                res = await client.get(
+                    f"{NETMIRROR_MAIN_URL}/mobile/home?app=1",
+                    headers={
+                        "User-Agent": mobile_ua,
+                        "X-Requested-With": "app.netmirror.netmirrornew"
+                    }
+                )
+                soup = BeautifulSoup(res.text, 'html.parser')
+                body = soup.find("body")
+                if not body:
+                    raise Exception("Could not find body tag")
                 
-                retries += 1
-                await asyncio.sleep(0.5)
-            
-            raise Exception("NetMirror bypass failed after max retries")
+                addhash = body.get("data-addhash")
+                if not addhash:
+                    # Try regex fallback if BeautifulSoup fails
+                    match = re.search(r'data-addhash="([^"]+)"', res.text)
+                    if match:
+                        addhash = match.group(1)
+                    else:
+                        raise Exception("Could not find data-addhash")
+                
+                # 2. GET userver to register the hash
+                tm = int(time.time())
+                await client.get(
+                    f"https://userver.net52.cc/?jjoii={addhash}&a=y&t={tm}",
+                    headers={"User-Agent": mobile_ua}
+                )
+                
+                # 3. Wait and verify loop (up to 8 times with 10s delay)
+                retries = 0
+                while retries < 8:
+                    await asyncio.sleep(10)
+                    try:
+                        v_res = await client.post(
+                            f"{NETMIRROR_MAIN_URL}/mobile/verify2.php",
+                            headers={
+                                "User-Agent": mobile_ua,
+                                "X-Requested-With": "XMLHttpRequest"
+                            },
+                            data={"verify": addhash}
+                        )
+                        verify_check = v_res.text
+                        if '"statusup":"All Done"' in verify_check:
+                            cookie = v_res.cookies.get("t_hash_t")
+                            if cookie:
+                                _netmirror_cookie = cookie
+                                _netmirror_cache_time = current_time
+                                return cookie
+                            else:
+                                # Sometimes it's set in a previous request or we need to check all cookies
+                                for c_name, c_val in v_res.cookies.items():
+                                    if c_name == "t_hash_t":
+                                        _netmirror_cookie = c_val
+                                        _netmirror_cache_time = current_time
+                                        return c_val
+                    except Exception:
+                        pass
+                    retries += 1
+                
+                raise Exception("NetMirror bypass failed after max retries")
+                
+            except Exception as e:
+                # Clear cache on error
+                _netmirror_cookie = None
+                raise e
 
     async def _extract_netmirror(
         self,
@@ -416,46 +455,36 @@ class MeowVerseProvider(Provider):
                     "user_token": "233123f803cf02184bf6c67e149cdd50"
                 }
                 
+                mobile_ua = "Mozilla/5.0 (Linux; Android 12; RMX2117 Build/SP1A.210812.016; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/147.0.7727.55 Mobile Safari/537.36 /OS.Gatu v3.0"
                 headers = {
-                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                    "User-Agent": mobile_ua,
                     "X-Requested-With": "XMLHttpRequest",
                     "Referer": f"{NETMIRROR_MAIN_URL}/home"
                 }
                 
-                # Step 1: POST to play.php to get transfer hash
+                # Step 1: POST to play.php to get transfer hash (token)
                 hash_value = ""
                 try:
                     play_res = await client.post(
-                        f"{NETMIRROR_MAIN_URL}/play.php",
-                        headers={**headers, "Content-Type": "application/x-www-form-urlencoded"},
+                        f"{NETMIRROR_API_URL}/play.php",
+                        headers={**headers, "Content-Type": "application/x-www-form-urlencoded", "Host": "net22.cc"},
                         cookies=cookies,
-                        data=f"id={episode_id}"
+                        data={"id": episode_id}
                     )
                     try:
                         play_data = play_res.json()
                         if play_data and isinstance(play_data.get("h"), str):
-                            hash_value = play_data["h"]
+                            h_token = play_data["h"]
+                            # Kotlin: h.substringAfter("in=")
+                            hash_value = h_token.split("in=")[-1] if "in=" in h_token else h_token
                     except Exception:
                         pass
                 except Exception:
                     pass
                 
-                # Step 2: GET play.php on NEW_URL to transfer session
-                if hash_value:
-                    try:
-                        await client.get(
-                            f"{NETMIRROR_NEW_URL}/play.php?id={episode_id}&{hash_value}",
-                            headers=headers,
-                            cookies=cookies,
-                            follow_redirects=False
-                        )
-                    except Exception:
-                        pass
-                
-                # Step 3: Fetch content title (needed for playlist endpoint)
+                # Step 2: Fetch content title (needed for playlist endpoint)
                 content_title = ""
                 try:
-                    # Try to fetch title from post.php or pass audio_lang if title fetch fails (like web app fallback)
                     post_res = await client.get(
                         f"{NETMIRROR_MAIN_URL}/post.php?id={movie_id}&t={tm}",
                         headers=headers, cookies=cookies
@@ -468,17 +497,14 @@ class MeowVerseProvider(Provider):
                 if not content_title and audio_lang:
                     content_title = audio_lang
 
-                # Step 4: Fetch playlist with hash using /mobile/playlist.php
-                # Matches Web App: /mobile/playlist.php?id={episodeId}&t={title}&tm={time}
-                hash_clean = hash_value[3:] if hash_value.startswith("in=") else hash_value
-                # hash_param = f"&h={hash_clean}" if hash_clean else "" # Web app doesn't seem to use h param for mobile endpoint?
+                # Step 3: Fetch playlist with hash using playlist.php
                 title_param = quote(content_title) if content_title else ""
                 
-                # Use NETMIRROR_NEW_URL (net52.cc) as STREAM_URL in web app
-                playlist_url = f"{NETMIRROR_NEW_URL}/mobile/playlist.php?id={episode_id}&t={title_param}&tm={tm}"
+                # Kotlin: $mainUrl/playlist.php?id=$id&t=$title&tm=$unixTime&h=$token
+                playlist_url = f"{NETMIRROR_MAIN_URL}/playlist.php?id={episode_id}&t={title_param}&tm={tm}&h={hash_value}"
                 
                 res_text = ""
-                playlist_base_url = NETMIRROR_NEW_URL
+                playlist_base_url = NETMIRROR_MAIN_URL
                 
                 try:
                     res = await client.get(playlist_url, headers=headers, cookies=cookies)
@@ -573,9 +599,12 @@ class MeowVerseProvider(Provider):
                             subtitles=subtitles,
                             qualities=qualities,
                             headers={
-                                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+                                "User-Agent": "Mozilla/5.0 (Android) ExoPlayer",
+                                "Accept": "*/*",
+                                "Accept-Encoding": "identity",
+                                "Connection": "keep-alive",
                                 "Referer": f"{playlist_base_url}/",
-                                "Cookie": f"t_hash_t={cookie_value}; ott=nf; hd=on; user_token=233123f803cf02184bf6c67e149cdd50"
+                                "Cookie": f"t_hash_t={cookie_value}; ott=nf; hd=on"
                             }
                         )
                 
