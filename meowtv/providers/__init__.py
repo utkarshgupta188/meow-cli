@@ -3,12 +3,15 @@
 from meowtv.providers.base import Provider
 from meowtv.providers.meowtv import MeowTVProvider
 from meowtv.providers.meowtoon import MeowToonProvider
+from meowtv.providers.meowverse import MeowVerseProvider
 
 __all__ = [
     "Provider",
     "MeowTVProvider",
     "MeowToonProvider",
+    "MeowVerseProvider",
 ]
+
 
 # Provider registry for easy access
 PROVIDERS: dict[str, Provider] = {}
@@ -33,10 +36,9 @@ def register_providers():
     global PROVIDERS
     # Delay import of MeowVerseProvider to avoid circular dependency if needed, 
     # but strictly we import it at top. MeowVerseProvider will be the new CineStream one.
-    # from meowtv.providers.meowverse import MeowVerseProvider
     
     PROVIDERS = {
-        # "meowverse": MeowVerseProvider(),
+        "meowverse": MeowVerseProvider(),
         "meowtv": MeowTVProvider(),
         "meowtoon": MeowToonProvider(),
     }

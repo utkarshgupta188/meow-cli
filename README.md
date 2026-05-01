@@ -108,7 +108,7 @@ meowtv download <content_id> -o ~/Videos
 
 ---
 
-## 🏎️ Performance & Stability (v1.2.0+)
+## 🏎️ Performance & Stability (v1.2.1)
 
 We've recently overhauled the engine for maximum reliability:
 - **Intelligent Proxy Fallback**: Automatically detects worker failures and switches to direct connections for zero downtime.
