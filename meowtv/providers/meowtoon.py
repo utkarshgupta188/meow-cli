@@ -13,7 +13,7 @@ from meowtv.providers.base import Provider
 
 # Kartoons API
 MAIN_URL = "https://api.kartoons.me"
-DECRYPT_BASE = "https://kartoondecrypt.onrender.com"
+DECRYPT_BASE = "https://kartoondecrypt.vercel.app"
 TOKEN_URL = "https://kartoon-api.vercel.app/api/key"
 
 _kartoons_token: str | None = None
